@@ -101,10 +101,60 @@ button:disabled {
   font-size: 0.92rem;
 }
 
+.topActions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.githubLink {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.03);
+  font-size: 0.82rem;
+  font-weight: 720;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease;
+}
+
+.githubLink:hover {
+  border-color: rgba(31, 35, 40, 0.28);
+  box-shadow: 0 10px 24px rgba(31, 35, 40, 0.12);
+  transform: translateY(-1px);
+}
+
+.githubLink:focus-visible {
+  outline: 3px solid rgba(37, 111, 186, 0.18);
+  outline-offset: 2px;
+}
+
+.githubLink svg {
+  flex: 0 0 auto;
+}
+
+.githubLink span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .searchForm {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
   gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 
