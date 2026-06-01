@@ -1,0 +1,33 @@
+# Q-GARP Framework
+
+App for checking whether a public company
+fits a quality growth at a reasonable price profile. Enter a ticker, review the
+score, and compare growth, valuation, margins, and PEG adjusted for stock-based
+compensation.
+
+The app uses Yahoo Finance data through `yahoo-finance2`. It is a research
+helper, not investment advice.
+
+## Features
+
+- Ticker analysis with a 0-100 quality/growth/valuation score.
+- Five checklist areas: 5-year doubling pace, valuation, growth versus peers,
+  margin quality, and PEG with SBC.
+- Automatic Yahoo peer suggestions plus manually saved peer groups.
+- Ukrainian and English UI copy.
+- Lightweight API route for analysis at `https://q-garp.netlify.app/api/analyze?ticker=AAPL`.
+
+## Data Notes
+
+Financial data availability depends on Yahoo Finance coverage for each ticker.
+Some companies may have incomplete trailing financials, cash flow, SBC, peer, or
+historical valuation data. Peer groups are best treated as a starting point and
+reviewed manually for each company.
+
+## Forking
+
+Forks are welcome. You can use, modify, publish, and adapt it with minimal restrictions. 
+
+## License
+
+MIT. See [LICENSE](LICENSE).
