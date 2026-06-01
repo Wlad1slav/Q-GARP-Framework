@@ -1,5 +1,6 @@
 import YahooFinance from "yahoo-finance2";
 import type { AnalysisResult, EvidenceItem, IndicatorResult, MetricTone, PeerSource } from "./analysis-types";
+import { analysisCopy, defaultLanguage, localeForLanguage, normalizeLanguage, type Language } from "./i18n";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -23,10 +24,15 @@ const yahooFinance = new YahooFinance({
   suppressNotices: ["yahooSurvey", "ripHistorical"],
 });
 
-export async function analyzeTicker(inputTicker: string, manualPeerInput: string[] = []): Promise<AnalysisResult> {
+export async function analyzeTicker(
+  inputTicker: string,
+  manualPeerInput: string[] = [],
+  selectedLanguage: Language = defaultLanguage,
+): Promise<AnalysisResult> {
+  const language = normalizeLanguage(selectedLanguage);
   const symbol = normalizeTicker(inputTicker);
   if (!symbol) {
-    throw new Error("Введіть коректний тікер.");
+    throw new Error(analysisCopy[language].errors.invalidTicker);
   }
 
   const period1 = yearStart(-7);
@@ -59,6 +65,7 @@ export async function analyzeTicker(inputTicker: string, manualPeerInput: string
     spySummary,
     peers,
     peerSource,
+    language,
   });
 
   return {
@@ -238,6 +245,7 @@ function buildAnalysis({
   spySummary,
   peers,
   peerSource,
+  language,
 }: {
   symbol: string;
   quoteSummary: AnyRecord;
@@ -249,6 +257,7 @@ function buildAnalysis({
   spySummary: AnyRecord;
   peers: PeerSnapshot[];
   peerSource: PeerSource;
+  language: Language;
 }): AnalysisResult {
   const price = asRecord(quoteSummary.price);
   const financialData = asRecord(quoteSummary.financialData);
@@ -338,17 +347,17 @@ function buildAnalysis({
   };
 
   const indicators = [
-    buildDoubleIndicator(growth),
-    buildValuationIndicator(current, historicalMedians, peerMedians),
-    buildGrowthIndicator(current, growth, peerMedians),
-    buildMarginsIndicator(current, growth, marginTrend, peerMedians),
-    buildPegIndicator(current, growth),
+    buildDoubleIndicator(growth, language),
+    buildValuationIndicator(current, historicalMedians, peerMedians, language),
+    buildGrowthIndicator(current, growth, peerMedians, language),
+    buildMarginsIndicator(current, growth, marginTrend, peerMedians, language),
+    buildPegIndicator(current, growth, language),
   ];
 
   const knownIndicators = indicators.filter((item) => item.tone !== "unknown");
   const score = knownIndicators.length ? Math.round(avg(knownIndicators.map((item) => item.score))) : 0;
   const tone = toneFromScore(score);
-  const label = labelFromScore(score, tone);
+  const label = labelFromScore(score, tone, language);
   const dataNotes = buildDataNotes({
     annualFinancials,
     annualCashFlow,
@@ -357,6 +366,7 @@ function buildAnalysis({
     peers,
     historicalValuations,
     peerSource,
+    language,
   });
 
   return {
@@ -366,8 +376,8 @@ function buildAnalysis({
     sector: stringOrUndefined(assetProfile.sector),
     industry: stringOrUndefined(assetProfile.industry),
     currency: stringOrUndefined(price.currency ?? financialData.financialCurrency ?? summaryDetail.currency),
-    price: formatMoney(current.currentPrice, stringOrUndefined(price.currency)),
-    marketCap: formatCompact(current.marketCap),
+    price: formatMoney(current.currentPrice, stringOrUndefined(price.currency), language),
+    marketCap: formatCompact(current.marketCap, language),
     asOf: new Date().toISOString(),
     score,
     tone,
@@ -386,7 +396,8 @@ function buildDoubleIndicator(growth: {
   fcfCagr3y?: number;
   forwardRevenueGrowth?: number;
   forwardEarningsGrowth?: number;
-}): IndicatorResult {
+}, language: Language): IndicatorResult {
+  const copy = analysisCopy[language].indicators.double;
   const values = [
     growth.revenueCagr3y,
     growth.netIncomeCagr3y,
@@ -404,26 +415,19 @@ function buildDoubleIndicator(growth: {
 
   return {
     id: "double",
-    title: "Подвоєння за 5 років",
-    subtitle: "Виручка, прибуток, FCF",
-    verdict:
-      tone === "good"
-        ? "Темпи вже близькі або вищі за рівень, потрібний для подвоєння."
-        : tone === "watch"
-          ? "Є окремі сильні темпи, але повної впевненості для подвоєння поки немає."
-          : tone === "bad"
-            ? "Поточні темпи нижчі за потрібні для подвоєння за 5 років."
-            : "Недостатньо історії для оцінки подвоєння.",
+    title: copy.title,
+    subtitle: copy.subtitle,
+    verdict: copy.verdict[tone],
     tone,
     score,
     evidence: compactEvidence([
-      ["Потрібний CAGR", formatPercent(DOUBLE_CAGR)],
-      ["Виручка CAGR 3р", formatPercent(growth.revenueCagr3y)],
-      ["Прибуток CAGR 3р", formatPercent(growth.netIncomeCagr3y)],
-      ["FCF CAGR 3р", formatPercent(growth.fcfCagr3y)],
-      ["Прогноз EPS", formatPercent(growth.forwardEarningsGrowth)],
-      cagrValues.length ? ["Сигналів подвоєння", `${doubleSignals}/${values.length}`] : undefined,
-    ]),
+      [copy.evidence.requiredCagr, formatPercent(DOUBLE_CAGR, language)],
+      [copy.evidence.revenueCagr3y, formatPercent(growth.revenueCagr3y, language)],
+      [copy.evidence.netIncomeCagr3y, formatPercent(growth.netIncomeCagr3y, language)],
+      [copy.evidence.fcfCagr3y, formatPercent(growth.fcfCagr3y, language)],
+      [copy.evidence.epsForecast, formatPercent(growth.forwardEarningsGrowth, language)],
+      cagrValues.length ? [copy.evidence.doubleSignals, `${doubleSignals}/${values.length}`] : undefined,
+    ], language),
   };
 }
 
@@ -438,7 +442,9 @@ function buildValuationIndicator(
   },
   history: { ps?: number; pe?: number; pfcf?: number },
   peers: { trailingPE?: number; forwardPE?: number; ps?: number; evToEbitda?: number },
+  language: Language,
 ): IndicatorResult {
+  const copy = analysisCopy[language].indicators.valuation;
   const signals = [
     discountSignal(current.trailingPE, current.marketPE),
     discountSignal(current.trailingPE, peers.trailingPE),
@@ -452,27 +458,20 @@ function buildValuationIndicator(
 
   return {
     id: "valuation",
-    title: "Ціна проти ринку",
-    subtitle: "Ринок, peers, історія",
-    verdict:
-      tone === "good"
-        ? "Оцінка виглядає дешевшою за кількома доступними мультиплікаторами."
-        : tone === "watch"
-          ? "Мультиплікатори неоднорідні: частина дешевша, частина вже з премією."
-          : tone === "bad"
-            ? "Папір торгується з премією до доступних бенчмарків."
-            : "Немає достатніх мультиплікаторів для порівняння ціни.",
+    title: copy.title,
+    subtitle: copy.subtitle,
+    verdict: copy.verdict[tone],
     tone,
     score,
     evidence: compactEvidence([
-      ["P/E", formatMultiple(current.trailingPE)],
-      ["P/E SPY", formatMultiple(current.marketPE)],
-      ["P/E peers", formatMultiple(peers.trailingPE)],
-      ["P/S", formatMultiple(current.priceToSales)],
-      ["P/S істор.", formatMultiple(history.ps)],
-      ["P/FCF", formatMultiple(current.pfcf)],
-      ["P/FCF істор.", formatMultiple(history.pfcf)],
-    ]),
+      ["P/E", formatMultiple(current.trailingPE, language)],
+      ["P/E SPY", formatMultiple(current.marketPE, language)],
+      ["P/E peers", formatMultiple(peers.trailingPE, language)],
+      ["P/S", formatMultiple(current.priceToSales, language)],
+      [copy.evidence.psHistory, formatMultiple(history.ps, language)],
+      ["P/FCF", formatMultiple(current.pfcf, language)],
+      [copy.evidence.pfcfHistory, formatMultiple(history.pfcf, language)],
+    ], language),
   };
 }
 
@@ -487,7 +486,9 @@ function buildGrowthIndicator(
     forwardRevenueGrowth?: number;
   },
   peers: { revenueGrowth?: number; earningsGrowth?: number },
+  language: Language,
 ): IndicatorResult {
+  const copy = analysisCopy[language].indicators.growth;
   const signals = [
     premiumSignal(current.revenueGrowth, peers.revenueGrowth),
     premiumSignal(current.earningsGrowth, peers.earningsGrowth),
@@ -500,26 +501,19 @@ function buildGrowthIndicator(
 
   return {
     id: "growth",
-    title: "Ріст проти конкурентів",
-    subtitle: "Виручка, прибуток, FCF",
-    verdict:
-      tone === "good"
-        ? "Компанія росте швидше за peer-групу або має сильний власний тренд."
-        : tone === "watch"
-          ? "Ріст конкурентний, але не всюди кращий за групу порівняння."
-          : tone === "bad"
-            ? "Темпи росту слабші за доступну peer-групу."
-            : "Немає достатніх даних для порівняння росту.",
+    title: copy.title,
+    subtitle: copy.subtitle,
+    verdict: copy.verdict[tone],
     tone,
     score,
     evidence: compactEvidence([
-      ["Виручка YoY", formatPercent(current.revenueGrowth)],
-      ["Виручка peers", formatPercent(peers.revenueGrowth)],
-      ["EPS YoY", formatPercent(current.earningsGrowth)],
-      ["EPS peers", formatPercent(peers.earningsGrowth)],
-      ["Виручка CAGR", formatPercent(growth.revenueCagr3y)],
-      ["FCF CAGR", formatPercent(growth.fcfCagr3y)],
-    ]),
+      [copy.evidence.revenueYoy, formatPercent(current.revenueGrowth, language)],
+      [copy.evidence.revenuePeers, formatPercent(peers.revenueGrowth, language)],
+      [copy.evidence.epsYoy, formatPercent(current.earningsGrowth, language)],
+      [copy.evidence.epsPeers, formatPercent(peers.earningsGrowth, language)],
+      [copy.evidence.revenueCagr, formatPercent(growth.revenueCagr3y, language)],
+      [copy.evidence.fcfCagr, formatPercent(growth.fcfCagr3y, language)],
+    ], language),
   };
 }
 
@@ -538,7 +532,9 @@ function buildMarginsIndicator(
     netDelta?: number;
   },
   peers: { profitMargin?: number },
+  language: Language,
 ): IndicatorResult {
+  const copy = analysisCopy[language].indicators.margins;
   const expansionSignals = [trend.grossDelta, trend.operatingDelta, trend.netDelta].filter(isFiniteNumber);
   const signals = [
     ...expansionSignals.map((delta) => thresholdSignal(delta, -0.01, 0.02)),
@@ -551,26 +547,19 @@ function buildMarginsIndicator(
 
   return {
     id: "margins",
-    title: "Маржа й перевага",
-    subtitle: "Якість росту",
-    verdict:
-      tone === "good"
-        ? "Ріст підтримується маржами та якісною прибутковістю."
-        : tone === "watch"
-          ? "Маржі здебільшого тримаються, але перевага не бездоганна."
-          : tone === "bad"
-            ? "Маржі або прибутковість слабшають на фоні росту."
-            : "Недостатньо даних для оцінки маржинальності.",
+    title: copy.title,
+    subtitle: copy.subtitle,
+    verdict: copy.verdict[tone],
     tone,
     score,
     evidence: compactEvidence([
-      ["Gross margin", formatPercent(current.grossMargin)],
-      ["Gross зміна 3р", formatPp(trend.grossDelta)],
-      ["Operating margin", formatPercent(current.operatingMargin)],
-      ["Operating зміна", formatPp(trend.operatingDelta)],
-      ["Net margin", formatPercent(current.profitMargin)],
-      ["ROE", formatPercent(current.returnOnEquity)],
-    ]),
+      [copy.evidence.grossMargin, formatPercent(current.grossMargin, language)],
+      [copy.evidence.grossChange3y, formatPp(trend.grossDelta, language)],
+      [copy.evidence.operatingMargin, formatPercent(current.operatingMargin, language)],
+      [copy.evidence.operatingChange, formatPp(trend.operatingDelta, language)],
+      [copy.evidence.netMargin, formatPercent(current.profitMargin, language)],
+      [copy.evidence.roe, formatPercent(current.returnOnEquity, language)],
+    ], language),
   };
 }
 
@@ -587,7 +576,9 @@ function buildPegIndicator(
     forwardEarningsGrowth?: number;
     netIncomeCagr3y?: number;
   },
+  language: Language,
 ): IndicatorResult {
+  const copy = analysisCopy[language].indicators.peg;
   const growthForPeg = firstNumber(growth.forwardEarningsGrowth, growth.netIncomeCagr3y);
   const basePeg = firstNumber(
     current.peg,
@@ -609,25 +600,18 @@ function buildPegIndicator(
 
   return {
     id: "peg",
-    title: "PEG з SBC",
-    subtitle: "PEG < 1 після компенсацій",
-    verdict:
-      tone === "good"
-        ? "SBC не ламає картину: скоригований PEG нижче або близько 1."
-        : tone === "watch"
-          ? "PEG або SBC потребують уваги, але сигнал не критичний."
-          : tone === "bad"
-            ? "PEG з урахуванням SBC виглядає дорогим."
-            : "Немає даних для PEG або SBC-корекції.",
+    title: copy.title,
+    subtitle: copy.subtitle,
+    verdict: copy.verdict[tone],
     tone,
     score,
     evidence: compactEvidence([
-      ["PEG Yahoo", formatMultiple(basePeg)],
-      ["PEG з SBC", formatMultiple(adjustedPeg)],
-      ["SBC / виручка", formatPercent(sbcToRevenue)],
-      ["SBC / FCF", formatPercent(sbcToFcf)],
-      ["EPS growth", formatPercent(growthForPeg)],
-    ]),
+      [copy.evidence.pegYahoo, formatMultiple(basePeg, language)],
+      [copy.evidence.pegWithSbc, formatMultiple(adjustedPeg, language)],
+      [copy.evidence.sbcRevenue, formatPercent(sbcToRevenue, language)],
+      [copy.evidence.sbcFcf, formatPercent(sbcToFcf, language)],
+      [copy.evidence.epsGrowth, formatPercent(growthForPeg, language)],
+    ], language),
   };
 }
 
@@ -738,11 +722,10 @@ function toneFromScore(score: number): MetricTone {
   return "bad";
 }
 
-function labelFromScore(score: number, tone: MetricTone) {
-  if (tone === "good") return `Сильний профіль: ${score}/100`;
-  if (tone === "watch") return `Змішаний профіль: ${score}/100`;
-  if (tone === "bad") return `Слабкий профіль: ${score}/100`;
-  return "Даних замало";
+function labelFromScore(score: number, tone: MetricTone, language: Language) {
+  const labels = analysisCopy[language].scoreLabels;
+  if (tone === "unknown") return labels.unknown;
+  return `${labels[tone]}: ${score}/100`;
 }
 
 function buildDataNotes({
@@ -753,6 +736,7 @@ function buildDataNotes({
   peers,
   historicalValuations,
   peerSource,
+  language,
 }: {
   annualFinancials: StatementRow[];
   annualCashFlow: StatementRow[];
@@ -761,17 +745,19 @@ function buildDataNotes({
   peers: PeerSnapshot[];
   historicalValuations: Array<{ date: Date }>;
   peerSource: PeerSource;
+  language: Language;
 }) {
-  const notes =
+  const copy = analysisCopy[language].dataNotes;
+  const notes: string[] =
     peerSource === "manual"
-      ? ["Дані: Yahoo Finance; peer-група: вручну обрані конкуренти, медіана по доступних показниках."]
-      : ["Дані: Yahoo Finance; peer-група: базові рекомендації Yahoo. Для якісного порівняння краще обрати конкурентів вручну."];
-  if (annualFinancials.length < 3) notes.push("Історія фінзвітності коротка, CAGR може бути нестабільним.");
-  if (!annualCashFlow.length || !trailingCashFlow.length) notes.push("Cash flow або SBC доступні не для всіх емітентів.");
-  if (!trailingFinancials.length) notes.push("TTM-фінанси відсутні, частина метрик взята з останнього річного звіту.");
-  if (!peers.length) notes.push("Peer-порівняння недоступне для цього тікера.");
-  if (historicalValuations.length < 2) notes.push("Історичні valuation-мультиплікатори не вдалося побудувати.");
-  notes.push("Не є інвестиційною рекомендацією.");
+      ? [copy.manualPeers]
+      : [copy.recommendedPeers];
+  if (annualFinancials.length < 3) notes.push(copy.shortHistory);
+  if (!annualCashFlow.length || !trailingCashFlow.length) notes.push(copy.missingCashFlow);
+  if (!trailingFinancials.length) notes.push(copy.missingTtm);
+  if (!peers.length) notes.push(copy.noPeers);
+  if (historicalValuations.length < 2) notes.push(copy.noHistory);
+  notes.push(copy.disclaimer);
   return notes;
 }
 
@@ -840,10 +826,11 @@ function findRowByTime(rows: StatementRow[], date: StatementRow["date"]) {
   return rows.find((row) => dateValue(row.date)?.getTime() === target);
 }
 
-function compactEvidence(items: Array<[string, string] | undefined>): EvidenceItem[] {
+function compactEvidence(items: Array<[string, string] | undefined>, language: Language): EvidenceItem[] {
+  const emptyValue = analysisCopy[language].notAvailable;
   return items
     .filter((item): item is [string, string] => Boolean(item))
-    .filter(([, value]) => value !== "н/д")
+    .filter(([, value]) => value !== emptyValue)
     .slice(0, 7)
     .map(([label, value]) => ({ label, value }));
 }
@@ -933,51 +920,51 @@ function stringOrUndefined(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function formatPercent(value?: number) {
-  if (!isFiniteNumber(value)) return "н/д";
-  return new Intl.NumberFormat("uk-UA", {
+function formatPercent(value: number | undefined, language: Language) {
+  if (!isFiniteNumber(value)) return analysisCopy[language].notAvailable;
+  return new Intl.NumberFormat(localeForLanguage(language), {
     style: "percent",
     maximumFractionDigits: 1,
     minimumFractionDigits: Math.abs(value) < 0.1 ? 1 : 0,
   }).format(value);
 }
 
-function formatPp(value?: number) {
-  if (!isFiniteNumber(value)) return "н/д";
+function formatPp(value: number | undefined, language: Language) {
+  if (!isFiniteNumber(value)) return analysisCopy[language].notAvailable;
   const pp = value * 100;
   const sign = pp > 0 ? "+" : "";
-  return `${sign}${new Intl.NumberFormat("uk-UA", {
+  return `${sign}${new Intl.NumberFormat(localeForLanguage(language), {
     maximumFractionDigits: 1,
     minimumFractionDigits: 1,
-  }).format(pp)} п.п.`;
+  }).format(pp)} ${analysisCopy[language].pointSuffix}`;
 }
 
-function formatMultiple(value?: number) {
-  if (!isFiniteNumber(value) || value <= 0) return "н/д";
-  return `${new Intl.NumberFormat("uk-UA", {
+function formatMultiple(value: number | undefined, language: Language) {
+  if (!isFiniteNumber(value) || value <= 0) return analysisCopy[language].notAvailable;
+  return `${new Intl.NumberFormat(localeForLanguage(language), {
     maximumFractionDigits: 1,
     minimumFractionDigits: value < 10 ? 1 : 0,
   }).format(value)}x`;
 }
 
-function formatCompact(value?: number) {
+function formatCompact(value: number | undefined, language: Language) {
   if (!isFiniteNumber(value)) return undefined;
-  return new Intl.NumberFormat("uk-UA", {
+  return new Intl.NumberFormat(localeForLanguage(language), {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
 }
 
-function formatMoney(value?: number, currency = "USD") {
+function formatMoney(value: number | undefined, currency = "USD", language: Language) {
   if (!isFiniteNumber(value)) return undefined;
   try {
-    return new Intl.NumberFormat("uk-UA", {
+    return new Intl.NumberFormat(localeForLanguage(language), {
       style: "currency",
       currency,
       maximumFractionDigits: value > 100 ? 0 : 2,
     }).format(value);
   } catch {
-    return new Intl.NumberFormat("uk-UA", {
+    return new Intl.NumberFormat(localeForLanguage(language), {
       maximumFractionDigits: 2,
     }).format(value);
   }

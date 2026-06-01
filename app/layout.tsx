@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Quality Growth at a Reasonable Price",
-  description: "Чеклист якісного зростання за розумною ціною",
+  description: "Quality growth checklist / Чеклист якісного зростання за розумною ціною",
 };
 
 export default function RootLayout({

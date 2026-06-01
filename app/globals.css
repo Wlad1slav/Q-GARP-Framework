@@ -59,7 +59,7 @@ button:disabled {
 
 .topBar {
   display: grid;
-  grid-template-columns: 1fr minmax(320px, 460px);
+  grid-template-columns: 1fr minmax(320px, 560px);
   align-items: center;
   gap: 18px;
   margin-bottom: 26px;
@@ -103,7 +103,7 @@ button:disabled {
 
 .searchForm {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 8px;
   min-width: 0;
 }
@@ -170,6 +170,42 @@ button:disabled {
   color: var(--ink);
   background: var(--panel);
   border-color: var(--line);
+}
+
+.languageToggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 42px);
+  height: 46px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.languageOption {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  font-size: 0.78rem;
+  font-weight: 780;
+}
+
+.languageOption + .languageOption {
+  border-left: 1px solid var(--line);
+}
+
+.languageOption.active {
+  color: #fff;
+  background: var(--ink);
+}
+
+.languageOption:focus-visible {
+  outline: 3px solid rgba(37, 111, 186, 0.18);
+  outline-offset: -3px;
 }
 
 .summaryBand {
@@ -698,6 +734,11 @@ button:disabled {
 
   .searchForm {
     grid-template-columns: 1fr 46px 46px;
+  }
+
+  .languageToggle {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 
   .primaryButton {

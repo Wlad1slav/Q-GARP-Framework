@@ -18,8 +18,17 @@ import {
   UsersRound,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { AnalysisResult, IndicatorResult, MetricTone } from "@/lib/analysis-types";
+import {
+  defaultLanguage,
+  languageLabels,
+  localeForLanguage,
+  normalizeLanguage,
+  supportedLanguages,
+  uiCopy,
+  type Language,
+} from "@/lib/i18n";
 import { termDefinitions, termForLabel, type TermKey } from "@/lib/term-definitions";
 
 const metricIcons = {
@@ -30,13 +39,6 @@ const metricIcons = {
   peg: Calculator,
 } satisfies Record<IndicatorResult["id"], typeof TrendingUp>;
 
-const toneLabels: Record<MetricTone, string> = {
-  good: "Так",
-  watch: "Під питанням",
-  bad: "Ні",
-  unknown: "Даних замало",
-};
-
 const toneIcons = {
   good: CheckCircle2,
   watch: CircleAlert,
@@ -44,7 +46,10 @@ const toneIcons = {
   unknown: AlertTriangle,
 } satisfies Record<MetricTone, typeof CheckCircle2>;
 
+const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
+
 export default function Home() {
+  const [language, setLanguage] = useState<Language>(defaultLanguage);
   const [ticker, setTicker] = useState("");
   const [lastTicker, setLastTicker] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -52,62 +57,94 @@ export default function Home() {
   const [error, setError] = useState("");
   const [peerInput, setPeerInput] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
+  const didReadInitialUrl = useRef(false);
+  const t = uiCopy[language];
 
   const asOf = analysis?.asOf
-    ? new Intl.DateTimeFormat("uk-UA", {
+    ? new Intl.DateTimeFormat(localeForLanguage(language), {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(new Date(analysis.asOf))
     : "";
 
-  const loadAnalysis = useCallback(async (nextTicker: string, peerOverride?: string[] | null) => {
-    const cleanTicker = nextTicker.trim();
-    if (!cleanTicker) return;
-    const peers = peerOverride === undefined ? readSavedPeerGroup(cleanTicker) : (peerOverride ?? []);
-    const params = new URLSearchParams({ ticker: cleanTicker });
-    if (peers.length) {
-      params.set("peers", peers.join(","));
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/analyze?${params.toString()}`, {
-        cache: "no-store",
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.message ?? "Не вдалося отримати дані.");
+  const loadAnalysis = useCallback(
+    async (nextTicker: string, peerOverride?: string[] | null, requestLanguage = language) => {
+      const cleanTicker = nextTicker.trim();
+      if (!cleanTicker) return;
+      const requestCopy = uiCopy[requestLanguage];
+      const peers = peerOverride === undefined ? readSavedPeerGroup(cleanTicker) : (peerOverride ?? []);
+      const params = new URLSearchParams({ ticker: cleanTicker, lang: requestLanguage });
+      if (peers.length) {
+        params.set("peers", peers.join(","));
       }
-      setAnalysis(payload);
-      setPeerInput(payload.peerSymbols?.join(", ") ?? "");
-      setPromptCopied(false);
-      setLastTicker(cleanTicker.toUpperCase());
-    } catch (caught) {
-      setAnalysis(null);
-      setError(caught instanceof Error ? caught.message : "Не вдалося отримати дані.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+      setLoading(true);
+      setError("");
+
+      try {
+        const response = await fetch(`/api/analyze?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.message ?? requestCopy.errors.loadData);
+        }
+        setAnalysis(payload);
+        setPeerInput(payload.peerSymbols?.join(", ") ?? "");
+        setPromptCopied(false);
+        setLastTicker(cleanTicker.toUpperCase());
+      } catch (caught) {
+        setAnalysis(null);
+        setError(caught instanceof Error ? caught.message : requestCopy.errors.loadData);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [language],
+  );
 
   useEffect(() => {
-    const initialTicker = new URLSearchParams(window.location.search).get("ticker");
+    if (didReadInitialUrl.current) return;
+    didReadInitialUrl.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const initialLanguage = normalizeLanguage(params.get("lang") ?? window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+    const initialTicker = params.get("ticker");
+    setLanguage(initialLanguage);
+    document.documentElement.lang = initialLanguage;
+
     if (!initialTicker) return;
 
     const cleanTicker = initialTicker.toUpperCase();
     const timer = window.setTimeout(() => {
       setTicker(cleanTicker);
-      void loadAnalysis(cleanTicker);
+      void loadAnalysis(cleanTicker, undefined, initialLanguage);
     }, 0);
 
     return () => window.clearTimeout(timer);
   }, [loadAnalysis]);
 
+  useEffect(() => {
+    document.documentElement.lang = language;
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void loadAnalysis(ticker);
+  }
+
+  function changeLanguage(nextLanguage: Language) {
+    if (nextLanguage === language) return;
+
+    setLanguage(nextLanguage);
+    const targetTicker = analysis?.symbol ?? lastTicker;
+    if (targetTicker) {
+      void loadAnalysis(targetTicker, undefined, nextLanguage);
+      return;
+    }
+
+    setError("");
   }
 
   function applyPeerGroup() {
@@ -131,7 +168,7 @@ export default function Home() {
   async function copyPeerPrompt() {
     if (!analysis) return;
 
-    await copyToClipboard(buildPeerSelectionPrompt(analysis));
+    await copyToClipboard(buildPeerSelectionPrompt(analysis, language));
     setPromptCopied(true);
     window.setTimeout(() => setPromptCopied(false), 1800);
   }
@@ -144,8 +181,8 @@ export default function Home() {
             <BarChart3 size={23} />
           </div>
           <div className="brandText">
-            <h1>Q-GARP Framework - Taras Guk checklist</h1>
-            <p>Чеклист якісного зростання за розумною ціною</p>
+            <h1>{t.brandTitle}</h1>
+            <p>{t.brandSubtitle}</p>
           </div>
         </div>
 
@@ -155,28 +192,42 @@ export default function Home() {
             value={ticker}
             onChange={(event) => setTicker(event.target.value.toUpperCase())}
             placeholder="AAPL"
-            aria-label="Тікер"
+            aria-label={t.aria.ticker}
             maxLength={16}
           />
-          <button className="primaryButton" disabled={loading || !ticker.trim()} title="Оцінити" type="submit">
+          <button className="primaryButton" disabled={loading || !ticker.trim()} title={t.actions.analyze} type="submit">
             {loading ? <Loader2 className="spinning" size={18} /> : <Search size={18} />}
-            <span>Оцінити</span>
+            <span>{t.actions.analyze}</span>
           </button>
           <button
             className="iconButton secondaryButton"
             disabled={loading || !lastTicker}
-            title="Оновити"
+            title={t.actions.refresh}
             type="button"
             onClick={() => void loadAnalysis(lastTicker)}
           >
             <RefreshCw size={18} />
           </button>
+          <div className="languageToggle" role="group" aria-label={t.aria.language}>
+            {supportedLanguages.map((nextLanguage) => (
+              <button
+                aria-pressed={language === nextLanguage}
+                className={`languageOption ${language === nextLanguage ? "active" : ""}`}
+                disabled={loading && language !== nextLanguage}
+                key={nextLanguage}
+                type="button"
+                onClick={() => changeLanguage(nextLanguage)}
+              >
+                {languageLabels[nextLanguage]}
+              </button>
+            ))}
+          </div>
         </form>
       </header>
 
       {analysis ? (
         <>
-          <section className="summaryBand" aria-label="Підсумок">
+          <section className="summaryBand" aria-label={t.aria.summary}>
             <div className="scoreBlock">
               <div className="scoreRing" style={{ "--score": analysis.score } as React.CSSProperties}>
                 <strong>{analysis.score}</strong>
@@ -190,21 +241,22 @@ export default function Home() {
             </div>
 
             <div className="companyGrid">
-              <Fact label="Ціна" value={analysis.price} />
-              <Fact label="Капіталізація" value={analysis.marketCap} termKey="marketCap" />
-              <Fact label="Сектор" value={analysis.sector ?? analysis.industry} />
-              <Fact label="Оновлено" value={asOf} />
+              <Fact label={t.facts.price} language={language} value={analysis.price} />
+              <Fact label={t.facts.marketCap} language={language} value={analysis.marketCap} termKey="marketCap" />
+              <Fact label={t.facts.sector} language={language} value={analysis.sector ?? analysis.industry} />
+              <Fact label={t.facts.updated} language={language} value={asOf} />
             </div>
           </section>
 
           <div className="statusRow">
             <span className="miniChip">
               <BadgeDollarSign size={15} />
-              {analysis.currency ?? "валюта н/д"}
+              {analysis.currency ?? t.currencyUnavailable}
             </span>
             <span className="miniChip">
               <BarChart3 size={15} />
-              <TermLabel label="Peers" termKey="peers" />: {analysis.peerSymbols.length ? analysis.peerSymbols.join(", ") : "н/д"}
+              <TermLabel label={t.peers.label} language={language} termKey="peers" />:{" "}
+              {analysis.peerSymbols.length ? analysis.peerSymbols.join(", ") : t.notAvailable}
             </span>
             {analysis.exchange ? (
               <span className="miniChip">
@@ -218,15 +270,13 @@ export default function Home() {
             <div className="peerEditorText">
               <span className={`peerSourceBadge ${analysis.peerSource === "manual" ? "manual" : "recommended"}`}>
                 <UsersRound size={15} />
-                {analysis.peerSource === "manual" ? "Peer-група" : "Yahoo peer-група"}
+                {analysis.peerSource === "manual" ? t.peers.manualBadge : t.peers.recommendedBadge}
               </span>
-              <p>
-                {analysis.peerSource === "manual"
-                  ? "Порівняння росту рахується по медіані вибраних конкурентів і збережене локально для цього тікера."
-                  : "Рекомендована група Yahoo - лише базове наближення. Для якіснішої оцінки краще вибрати прямих конкурентів вручну."}
-              </p>
+              <p>{analysis.peerSource === "manual" ? t.peers.manualText : t.peers.recommendedText}</p>
               {analysis.recommendedPeerSymbols.length ? (
-                <small>Рекомендовані: {analysis.recommendedPeerSymbols.join(", ")}</small>
+                <small>
+                  {t.peers.recommended}: {analysis.recommendedPeerSymbols.join(", ")}
+                </small>
               ) : null}
             </div>
 
@@ -236,72 +286,98 @@ export default function Home() {
                 value={peerInput}
                 onChange={(event) => setPeerInput(event.target.value.toUpperCase())}
                 placeholder="MSFT, GOOGL, AMZN"
-                aria-label="Конкуренти"
+                aria-label={t.aria.competitors}
               />
               <button
                 className="peerButton"
                 disabled={loading || !normalizePeerInput(peerInput, analysis.symbol).length}
-                title="Застосувати peer-групу"
+                title={t.peers.applyTitle}
                 type="button"
                 onClick={applyPeerGroup}
               >
                 <Save size={16} />
-                <span>Застосувати</span>
+                <span>{t.actions.apply}</span>
               </button>
               <button
                 className="peerButton prompt"
                 disabled={loading}
-                title="Скопіювати prompt для підбору конкурентів"
+                title={t.peers.promptTitle}
                 type="button"
                 onClick={() => void copyPeerPrompt()}
               >
                 <ClipboardCopy size={16} />
-                <span>{promptCopied ? "Скопійовано" : "Prompt"}</span>
+                <span>{promptCopied ? t.copied : t.prompt}</span>
               </button>
               <button
                 className="peerButton reset"
                 disabled={loading}
-                title="Скинути на рекомендовані"
+                title={t.peers.resetTitle}
                 type="button"
                 onClick={resetPeerGroup}
               >
                 <RotateCcw size={16} />
-                <span>Reset</span>
+                <span>{t.actions.reset}</span>
               </button>
             </div>
           </section>
 
-          <section className="metricGrid" aria-label="Показники">
+          <section className="metricGrid" aria-label={t.aria.metrics}>
             {analysis.indicators.map((indicator) => (
-              <MetricCard indicator={indicator} key={indicator.id} />
+              <MetricCard
+                indicator={indicator}
+                key={indicator.id}
+                language={language}
+                scoreAria={t.aria.score}
+                toneLabels={t.toneLabels}
+              />
             ))}
           </section>
 
           <p className="finePrint">{analysis.dataNotes.join(" ")}</p>
         </>
       ) : loading ? (
-        <StatePanel icon={<Loader2 size={34} />} title="Рахую показники" text="Фінзвітність, мультиплікатори, peer-група, SBC." type="loading" />
+        <StatePanel icon={<Loader2 size={34} />} title={t.states.loadingTitle} text={t.states.loadingText} type="loading" />
       ) : error ? (
-        <StatePanel icon={<AlertTriangle size={34} />} title="Тікер не оброблено" text={error} type="error" />
+        <StatePanel icon={<AlertTriangle size={34} />} title={t.states.errorTitle} text={error} type="error" />
       ) : (
-        <StatePanel icon={<Search size={34} />} title="Тікер" text="Наприклад: AAPL, MSFT, NVDA, TSLA." type="empty" />
+        <StatePanel icon={<Search size={34} />} title={t.states.emptyTitle} text={t.states.emptyText} type="empty" />
       )}
     </main>
   );
 }
 
-function Fact({ label, value, termKey }: { label: string; value?: string; termKey?: TermKey }) {
+function Fact({
+  label,
+  language,
+  value,
+  termKey,
+}: {
+  label: string;
+  language: Language;
+  value?: string;
+  termKey?: TermKey;
+}) {
   return (
     <div className="fact">
       <span>
-        <TermLabel label={label} termKey={termKey} />
+        <TermLabel label={label} language={language} termKey={termKey} />
       </span>
-      <strong>{value ?? "н/д"}</strong>
+      <strong>{value ?? uiCopy[language].notAvailable}</strong>
     </div>
   );
 }
 
-function MetricCard({ indicator }: { indicator: IndicatorResult }) {
+function MetricCard({
+  indicator,
+  language,
+  scoreAria,
+  toneLabels,
+}: {
+  indicator: IndicatorResult;
+  language: Language;
+  scoreAria: (score: number) => string;
+  toneLabels: Record<MetricTone, string>;
+}) {
   const Icon = metricIcons[indicator.id];
   const ToneIcon = toneIcons[indicator.tone];
   const fillClass = indicator.tone === "good" ? "" : indicator.tone;
@@ -314,10 +390,10 @@ function MetricCard({ indicator }: { indicator: IndicatorResult }) {
         </div>
         <div className="metricTitle">
           <h3>
-            <TermLabel label={indicator.title} termKey={termForLabel(indicator.title)} />
+            <TermLabel label={indicator.title} language={language} termKey={termForLabel(indicator.title)} />
           </h3>
           <small>
-            <TermLabel label={indicator.subtitle} termKey={termForLabel(indicator.subtitle)} />
+            <TermLabel label={indicator.subtitle} language={language} termKey={termForLabel(indicator.subtitle)} />
           </small>
         </div>
       </div>
@@ -332,7 +408,7 @@ function MetricCard({ indicator }: { indicator: IndicatorResult }) {
         {indicator.evidence.map((item) => (
           <li key={`${indicator.id}-${item.label}`}>
             <span>
-              <TermLabel label={item.label} termKey={termForLabel(item.label)} />
+              <TermLabel label={item.label} language={language} termKey={termForLabel(item.label)} />
             </span>
             <strong>{item.value}</strong>
           </li>
@@ -340,7 +416,7 @@ function MetricCard({ indicator }: { indicator: IndicatorResult }) {
       </ul>
 
       <div className="metricScore">
-        <div className="scoreBar" aria-label={`Оцінка ${indicator.score} зі 100`}>
+        <div className="scoreBar" aria-label={scoreAria(indicator.score)}>
           <div
             className={`scoreFill ${fillClass}`}
             style={{ "--fill": `${Math.max(4, indicator.score)}%` } as React.CSSProperties}
@@ -351,8 +427,8 @@ function MetricCard({ indicator }: { indicator: IndicatorResult }) {
   );
 }
 
-function TermLabel({ label, termKey }: { label: string; termKey?: TermKey }) {
-  const explanation = termKey ? termDefinitions[termKey] : undefined;
+function TermLabel({ label, language, termKey }: { label: string; language: Language; termKey?: TermKey }) {
+  const explanation = termKey ? termDefinitions[language][termKey] : undefined;
 
   if (!explanation) {
     return <>{label}</>;
@@ -387,7 +463,31 @@ function StatePanel({
   );
 }
 
-function buildPeerSelectionPrompt(analysis: AnalysisResult) {
+function buildPeerSelectionPrompt(analysis: AnalysisResult, language: Language) {
+  if (language === "en") {
+    const sector = analysis.sector ? `\nSector: ${analysis.sector}` : "";
+    const industry = analysis.industry ? `\nIndustry: ${analysis.industry}` : "";
+    const recommended = analysis.recommendedPeerSymbols.length
+      ? `\nCurrent baseline Yahoo group: ${analysis.recommendedPeerSymbols.join(", ")}`
+      : "";
+
+    return `I am analyzing ${analysis.symbol} (${analysis.name}) for a Q-GARP/GARP checklist.${sector}${industry}${recommended}
+
+Help me choose a high-quality peer group for comparing growth, margins, and valuation.
+
+Requirements:
+1. Pick 5-8 direct public competitors with liquid tickers.
+2. Prioritize similar business model, products, customers, revenue segments, geography, and maturity stage.
+3. Do not add ETFs, indexes, holding companies, suppliers, or customers unless they are direct competitors.
+4. If the company has several different business segments, explain which segment you use as the basis for the peer group.
+5. Do not invent tickers. If a ticker is ambiguous, specify the exchange or replace it with a better option.
+
+Return the answer in this format:
+- Briefly: why this peer group fits.
+- Tickers to paste into the field: TICKER1, TICKER2, TICKER3
+- Who not to include and why.`;
+  }
+
   const sector = analysis.sector ? `\nСектор: ${analysis.sector}` : "";
   const industry = analysis.industry ? `\nІндустрія: ${analysis.industry}` : "";
   const recommended = analysis.recommendedPeerSymbols.length
