@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Quality Growth at a Reasonable Price",
+  title: "Q-GARP Framework",
   description: "Quality growth checklist / Чеклист якісного зростання за розумною ціною",
   openGraph: {
-    title: "Quality Growth at a Reasonable Price",
+    title: "Q-GARP Framework",
     description: "Quality growth checklist / Чеклист якісного зростання за розумною ціною",
-    siteName: "Invest Rate",
+    siteName: "Q-GARP Framework",
     locale: "uk_UA",
     type: "website",
   },

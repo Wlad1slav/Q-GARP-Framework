@@ -1,5 +1,5 @@
 {
-  "name": "invest-rate",
+  "name": "q-garp-framework",
   "private": true,
   "scripts": {
     "dev": "next dev",
