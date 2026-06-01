@@ -13,6 +13,8 @@ export interface IndicatorResult {
   verdict: string;
   tone: MetricTone;
   score: number;
+  weight: number;
+  confidence: number;
   evidence: EvidenceItem[];
 }
 
@@ -27,6 +29,11 @@ export interface AnalysisResult {
   marketCap?: string;
   asOf: string;
   score: number;
+  rawScore: number;
+  confidence: number;
+  riskPenalty: number;
+  scoringProfile: string;
+  riskFlags: string[];
   tone: MetricTone;
   label: string;
   indicators: IndicatorResult[];

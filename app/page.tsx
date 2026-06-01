@@ -267,6 +267,24 @@ export default function Home() {
               {analysis.currency ?? t.currencyUnavailable}
             </span>
             <span className="miniChip">
+              <ShieldCheck size={15} />
+              {t.scoreMeta.confidence}: {analysis.confidence}/100
+            </span>
+            <span className="miniChip">
+              <Calculator size={15} />
+              {t.scoreMeta.rawScore}: {analysis.rawScore}/100
+            </span>
+            {analysis.riskPenalty ? (
+              <span className="miniChip">
+                <CircleAlert size={15} />
+                {t.scoreMeta.riskPenalty}: -{analysis.riskPenalty}
+              </span>
+            ) : null}
+            <span className="miniChip">
+              <BarChart3 size={15} />
+              {t.scoreMeta.profile}: {analysis.scoringProfile}
+            </span>
+            <span className="miniChip">
               <BarChart3 size={15} />
               <TermLabel label={t.peers.label} language={language} termKey="peers" />:{" "}
               {analysis.peerSymbols.length ? analysis.peerSymbols.join(", ") : t.notAvailable}
