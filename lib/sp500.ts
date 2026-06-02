@@ -14,6 +14,7 @@ export interface Sp500ConstituentResponse {
 
 const SP500_SOURCE_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const EXCLUDED_SP500_SYMBOLS = new Set(["GOOG"]);
 
 let cachedConstituents: { value: Sp500ConstituentResponse; expiresAt: number } | undefined;
 
@@ -69,7 +70,7 @@ function parseSp500Constituents(html: string) {
       sector: cells[2],
       industry: cells[3],
     }))
-    .filter((item) => item.symbol && item.name);
+    .filter((item) => item.symbol && item.name && !EXCLUDED_SP500_SYMBOLS.has(item.symbol));
 }
 
 function normalizeSymbol(value: string) {
