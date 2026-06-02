@@ -882,6 +882,10 @@ button:disabled {
   line-height: 1.35;
 }
 
+.sp500FinePrint {
+  margin: 0 0 16px;
+}
+
 .leaderGrid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

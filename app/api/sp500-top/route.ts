@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const MAX_BATCH_SIZE = 10;
 const CONCURRENCY = 2;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CACHE_VERSION = "full-v1";
 
 const analysisCache = new Map<string, { item: Sp500TopItem; expiresAt: number }>();
 
@@ -70,7 +71,7 @@ function parseTickerList(value: string | null) {
 }
 
 async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached: boolean }> {
-  const cacheKey = symbol;
+  const cacheKey = `${CACHE_VERSION}:${symbol}`;
   const now = Date.now();
   const cached = analysisCache.get(cacheKey);
 
@@ -78,10 +79,7 @@ async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached:
     return { item: cached.item, cached: true };
   }
 
-  const analysis = await analyzeTicker(symbol, [], "en", {
-    skipPeerSnapshots: true,
-    skipRecommendedPeers: true,
-  });
+  const analysis = await analyzeTicker(symbol, [], "en");
   const item = toTopItem(analysis);
 
   analysisCache.set(cacheKey, {

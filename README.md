@@ -62,10 +62,10 @@ historical valuation data. Peer groups are best treated as a starting point and
 reviewed manually for each company.
 
 The S&P 500 scanner gets its constituent universe from Wikipedia and uses Yahoo
-Finance for financial data. Batch scoring intentionally skips peer-snapshot and
-Yahoo recommendation lookups to avoid thousands of extra requests during a full
-index scan, so peer-sensitive indicators may be less precise than the
-single-ticker page with a curated peer group.
+Finance for financial data. Batch scoring uses the same default methodology as
+the single-ticker checklist, including Yahoo recommended peers. Browser-saved
+manual peer groups from the single-ticker page are local to that page and are
+not applied to the S&P 500 scanner.
 
 ## Forking
 

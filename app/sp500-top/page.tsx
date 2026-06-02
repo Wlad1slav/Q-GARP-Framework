@@ -62,6 +62,8 @@ const copy = {
     home: "Чеклист тікера",
     source: "Список",
     overall: "Загальний score",
+    peerNote:
+      "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера, з Yahoo recommended peers. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
     tableTitle: "Детальний рейтинг",
     emptyLeaders: "Очікує даних",
     noRows: "Ще немає оцінених компаній.",
@@ -119,6 +121,8 @@ const copy = {
     home: "Ticker checklist",
     source: "List",
     overall: "Overall score",
+    peerNote:
+      "Top scores use the same default methodology as the ticker checklist, with Yahoo recommended peers. Browser-saved manual peers from the single-ticker page are not applied here.",
     tableTitle: "Detailed ranking",
     emptyLeaders: "Waiting for data",
     noRows: "No scored companies yet.",
@@ -434,6 +438,8 @@ export default function Sp500TopPage() {
           {error}
         </div>
       ) : null}
+
+      <p className="finePrint sp500FinePrint">{t.peerNote}</p>
 
       <section className="leaderGrid" aria-label={t.subtitle}>
         {sp500IndicatorIds.map((id) => (
