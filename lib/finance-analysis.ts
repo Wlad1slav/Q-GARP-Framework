@@ -562,6 +562,7 @@ function buildAnalysis({
     currency: stringOrUndefined(price.currency ?? financialData.financialCurrency ?? summaryDetail.currency),
     price: formatMoney(current.currentPrice, stringOrUndefined(price.currency), language),
     marketCap: formatCompact(current.marketCap, language),
+    marketCapValue: current.marketCap,
     asOf: new Date().toISOString(),
     score,
     rawScore: scoreSummary.rawScore,

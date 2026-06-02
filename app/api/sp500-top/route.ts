@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_BATCH_SIZE = 5;
 const CONCURRENCY = 1;
-const CACHE_VERSION = "full-v2";
+const CACHE_VERSION = "full-v3";
 
 const analysisCache = new Map<string, { item: Sp500TopItem; expiresAt: number }>();
 
@@ -128,6 +128,7 @@ function toTopItem(analysis: AnalysisResult): Sp500TopItem {
     currency: analysis.currency,
     price: analysis.price,
     marketCap: analysis.marketCap,
+    marketCapValue: analysis.marketCapValue,
     asOf: analysis.asOf,
     score: analysis.score,
     rawScore: analysis.rawScore,

@@ -27,6 +27,7 @@ export interface AnalysisResult {
   currency?: string;
   price?: string;
   marketCap?: string;
+  marketCapValue?: number;
   asOf: string;
   score: number;
   rawScore: number;

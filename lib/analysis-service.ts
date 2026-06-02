@@ -32,7 +32,7 @@ export const ANALYSIS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 export const ANALYSIS_CACHE_TTL_SECONDS = ANALYSIS_CACHE_TTL_MS / 1000;
 
 const ANALYSIS_QUEUE_STATE_KEY = "__investRateAnalysisQueueState";
-const CACHE_VERSION = "analysis-v2";
+const CACHE_VERSION = "analysis-v3";
 const MAX_CACHE_ENTRIES = 700;
 
 declare global {

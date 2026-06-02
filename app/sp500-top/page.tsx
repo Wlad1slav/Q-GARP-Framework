@@ -8,15 +8,20 @@ import {
   Calculator,
   CheckCircle2,
   CircleAlert,
+  ExternalLink,
   Loader2,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
+  X,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetricTone } from "@/lib/analysis-types";
 import type { Sp500Constituent } from "@/lib/sp500";
@@ -47,6 +52,36 @@ type StoredSp500Scan = {
   expiresAt: number;
 };
 
+type HeatmapItem = Sp500TopItem & {
+  marketCapValueResolved: number;
+  sectorLabel: string;
+};
+
+type Rect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type HeatmapTile = {
+  item: HeatmapItem;
+  rect: Rect;
+};
+
+type HeatmapSectorLayout = {
+  sector: string;
+  rect: Rect;
+  headerHeight: number;
+  marketCapValue: number;
+  tiles: HeatmapTile[];
+};
+
+const HEATMAP_WIDTH = 1000;
+const HEATMAP_HEIGHT = 560;
+const HEATMAP_SECTOR_GAP = 2;
+const HEATMAP_TILE_GAP = 1;
+
 const indicatorIcons = {
   double: TrendingUp,
   valuation: BadgeDollarSign,
@@ -72,6 +107,31 @@ const copy = {
     peerNote:
       "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера, з Yahoo recommended peers. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
     tableTitle: "Детальний рейтинг",
+    heatmap: {
+      title: "Хітмапа S&P 500",
+      subtitle: "Score компаній за секторами",
+      allSectors: "Всі сектори",
+      empty: "Хітмапа з'явиться після скану компаній з доступною капіталізацією.",
+      unknownSector: "Інший сектор",
+      legend: "Шкала score",
+      stats: "Статистика",
+      yahooProfile: "Yahoo Finance",
+      close: "Закрити",
+      sectorCap: "Капіталізація сектора",
+      companies: "Компанії",
+      labels: {
+        score: "Score",
+        rawScore: "Raw score",
+        confidence: "Довіра",
+        riskPenalty: "Штраф ризику",
+        price: "Ціна",
+        exchange: "Біржа",
+        sector: "Сектор",
+        industry: "Індустрія",
+        marketCap: "Капіталізація",
+        asOf: "Дані",
+      },
+    },
     emptyLeaders: "Очікує даних",
     noRows: "Ще немає оцінених компаній.",
     loadingList: "Завантажую список S&P 500",
@@ -131,6 +191,31 @@ const copy = {
     peerNote:
       "Top scores use the same default methodology as the ticker checklist, with Yahoo recommended peers. Browser-saved manual peers from the single-ticker page are not applied here.",
     tableTitle: "Detailed ranking",
+    heatmap: {
+      title: "S&P 500 Heatmap",
+      subtitle: "Company scores by sector",
+      allSectors: "All sectors",
+      empty: "The heatmap will appear after scanned companies have market-cap data.",
+      unknownSector: "Other sector",
+      legend: "Score scale",
+      stats: "Statistics",
+      yahooProfile: "Yahoo Finance",
+      close: "Close",
+      sectorCap: "Sector market cap",
+      companies: "Companies",
+      labels: {
+        score: "Score",
+        rawScore: "Raw score",
+        confidence: "Confidence",
+        riskPenalty: "Risk penalty",
+        price: "Price",
+        exchange: "Exchange",
+        sector: "Sector",
+        industry: "Industry",
+        marketCap: "Market cap",
+        asOf: "Data",
+      },
+    },
     emptyLeaders: "Waiting for data",
     noRows: "No scored companies yet.",
     loadingList: "Loading the S&P 500 list",
@@ -198,6 +283,8 @@ export default function Sp500TopPage() {
   const [currentBatch, setCurrentBatch] = useState("");
   const [error, setError] = useState("");
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("score");
+  const [focusedHeatmapSector, setFocusedHeatmapSector] = useState<string | null>(null);
+  const [selectedHeatmapItem, setSelectedHeatmapItem] = useState<HeatmapItem | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const shouldStopRef = useRef(false);
   const didRestoreScanRef = useRef(false);
@@ -283,6 +370,16 @@ export default function Sp500TopPage() {
     ) as Record<Sp500IndicatorId, Sp500TopItem[]>;
   }, [items]);
 
+  const heatmapItems = useMemo(() => buildHeatmapItems(items, t.heatmap.unknownSector), [items, t.heatmap.unknownSector]);
+  const activeFocusedHeatmapSector =
+    focusedHeatmapSector && heatmapItems.some((item) => item.sectorLabel === focusedHeatmapSector) ? focusedHeatmapSector : null;
+  const heatmapLayout = useMemo(
+    () => buildHeatmapLayout(heatmapItems, activeFocusedHeatmapSector),
+    [activeFocusedHeatmapSector, heatmapItems],
+  );
+  const activeSelectedHeatmapItem = selectedHeatmapItem
+    ? (heatmapItems.find((item) => item.symbol === selectedHeatmapItem.symbol) ?? null)
+    : null;
   const rankedRows = useMemo(() => rankItems(items, selectedMetric, 100), [items, selectedMetric]);
   const progress = constituents.length ? Math.round((processedCount / constituents.length) * 100) : 0;
   const isComplete = constituents.length > 0 && processedCount >= constituents.length;
@@ -472,6 +569,16 @@ export default function Sp500TopPage() {
 
       <p className="finePrint sp500FinePrint">{t.peerNote}</p>
 
+      <Sp500Heatmap
+        focusedSector={activeFocusedHeatmapSector}
+        items={heatmapItems}
+        language={language}
+        layout={heatmapLayout}
+        onFocusSector={setFocusedHeatmapSector}
+        onResetZoom={() => setFocusedHeatmapSector(null)}
+        onSelectItem={setSelectedHeatmapItem}
+      />
+
       <section className="leaderGrid" aria-label={t.subtitle}>
         {sp500IndicatorIds.map((id) => (
           <LeaderboardPanel
@@ -520,6 +627,10 @@ export default function Sp500TopPage() {
           <div className="rankingEmpty">{t.noRows}</div>
         )}
       </section>
+
+      {activeSelectedHeatmapItem ? (
+        <HeatmapStatsModal item={activeSelectedHeatmapItem} language={language} onClose={() => setSelectedHeatmapItem(null)} />
+      ) : null}
     </main>
   );
 }
@@ -573,6 +684,196 @@ function ScanStat({ label, value }: { label: string; value: number }) {
     <div className="scanStat">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function Sp500Heatmap({
+  focusedSector,
+  items,
+  language,
+  layout,
+  onFocusSector,
+  onResetZoom,
+  onSelectItem,
+}: {
+  focusedSector: string | null;
+  items: HeatmapItem[];
+  language: Language;
+  layout: HeatmapSectorLayout[];
+  onFocusSector: (sector: string) => void;
+  onResetZoom: () => void;
+  onSelectItem: (item: HeatmapItem) => void;
+}) {
+  const t = copy[language].heatmap;
+  const focusedLayout = focusedSector ? layout.find((sector) => sector.sector === focusedSector) : undefined;
+
+  return (
+    <section className="heatmapSection" aria-label={t.title}>
+      <div className="heatmapHeader">
+        <div>
+          <h2>{t.title}</h2>
+          <p>
+            {focusedLayout
+              ? `${focusedLayout.sector} · ${formatCompactNumber(focusedLayout.marketCapValue, language)} · ${focusedLayout.tiles.length}`
+              : t.subtitle}
+          </p>
+        </div>
+
+        <div className="heatmapHeaderTools">
+          {focusedSector ? (
+            <button className="heatmapToolButton" type="button" onClick={onResetZoom}>
+              <Minimize2 size={16} />
+              <span>{t.allSectors}</span>
+            </button>
+          ) : null}
+
+          <div className="heatmapLegend" aria-label={t.legend}>
+            <span className="heatmapLegendStop low">0</span>
+            <span className="heatmapLegendStop mid">50</span>
+            <span className="heatmapLegendStop high">100</span>
+          </div>
+        </div>
+      </div>
+
+      {items.length ? (
+        <div className="heatmapCanvas">
+          {layout.map((sector) => (
+            <div className="heatmapSector" key={sector.sector} style={rectToStyle(sector.rect, HEATMAP_WIDTH, HEATMAP_HEIGHT)}>
+              <button
+                className="heatmapSectorButton"
+                style={{ height: `${(sector.headerHeight / Math.max(sector.rect.height, 1)) * 100}%` }}
+                title={`${sector.sector}: ${formatCompactNumber(sector.marketCapValue, language)}`}
+                type="button"
+                onClick={() => onFocusSector(sector.sector)}
+              >
+                <span>{sector.sector}</span>
+                <small>{formatCompactNumber(sector.marketCapValue, language)}</small>
+                {!focusedSector ? <Maximize2 size={12} /> : null}
+              </button>
+
+              {sector.tiles.map((tile) => {
+                const item = tile.item;
+                const localRect = relativeRect(tile.rect, sector.rect);
+                const colorStyle = scoreColorStyle(item.score, item.confidence);
+
+                return (
+                  <button
+                    className={`heatmapTile ${heatmapTileClass(tile.rect)}`}
+                    key={item.symbol}
+                    style={{
+                      ...rectToStyle(localRect, sector.rect.width, sector.rect.height),
+                      ...colorStyle,
+                    }}
+                    title={`${item.symbol}: ${item.score}/100 · ${item.marketCap ?? formatCompactNumber(item.marketCapValueResolved, language)}`}
+                    type="button"
+                    onClick={() => onSelectItem(item)}
+                  >
+                    <span className="heatmapTileSymbol">{item.symbol}</span>
+                    <strong>{item.score}</strong>
+                    <small>{item.marketCap ?? formatCompactNumber(item.marketCapValueResolved, language)}</small>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="heatmapEmpty">{t.empty}</div>
+      )}
+    </section>
+  );
+}
+
+function HeatmapStatsModal({
+  item,
+  language,
+  onClose,
+}: {
+  item: HeatmapItem;
+  language: Language;
+  onClose: () => void;
+}) {
+  const t = copy[language].heatmap;
+  const titleId = `heatmapStats-${item.symbol.replace(/[^a-z0-9_-]/gi, "-")}`;
+  const yahooUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(item.symbol)}`;
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div
+      className="heatmapDialogBackdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="heatmapDialog" aria-labelledby={titleId} aria-modal="true" role="dialog">
+        <div className="heatmapDialogTop">
+          <div className="heatmapDialogIdentity">
+            <span>{item.symbol}</span>
+            <h3 id={titleId}>{item.name}</h3>
+            <p>{[item.sectorLabel, item.industry].filter(Boolean).join(" · ")}</p>
+          </div>
+
+          <button className="iconButton secondaryButton heatmapCloseButton" title={t.close} type="button" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="heatmapDialogMain">
+          <div className="heatmapDialogScore" style={scoreColorStyle(item.score, item.confidence)}>
+            <strong>{item.score}</strong>
+            <span>{t.labels.score}</span>
+          </div>
+
+          <div className="heatmapStatsGrid">
+            <HeatmapStat label={t.labels.marketCap} value={item.marketCap ?? formatCompactNumber(item.marketCapValueResolved, language)} />
+            <HeatmapStat label={t.labels.price} value={item.price} />
+            <HeatmapStat label={t.labels.confidence} value={`${item.confidence}/100`} />
+            <HeatmapStat label={t.labels.rawScore} value={`${item.rawScore}/100`} />
+            <HeatmapStat label={t.labels.riskPenalty} value={`-${item.riskPenalty}`} />
+            <HeatmapStat label={t.labels.exchange} value={item.exchange} />
+            <HeatmapStat label={t.labels.sector} value={item.sectorLabel} />
+            <HeatmapStat label={t.labels.asOf} value={formatDateTime(item.asOf, language)} />
+          </div>
+        </div>
+
+        <div className="heatmapIndicatorGrid">
+          {sp500IndicatorIds.map((id) => {
+            const indicator = item.indicators[id];
+
+            return (
+              <div className={`heatmapIndicator tone-${indicator.tone}`} key={id}>
+                <span>{copy[language].indicators[id].short}</span>
+                <strong>{indicator.score}</strong>
+                <small>{indicator.confidence}/100</small>
+              </div>
+            );
+          })}
+        </div>
+
+        <a className="heatmapYahooLink" href={yahooUrl} target="_blank" rel="noreferrer">
+          <ExternalLink size={16} />
+          <span>{t.yahooProfile}</span>
+        </a>
+      </section>
+    </div>
+  );
+}
+
+function HeatmapStat({ label, value }: { label: string; value?: string | number }) {
+  return (
+    <div className="heatmapStat">
+      <span>{label}</span>
+      <strong>{value ?? "N/A"}</strong>
     </div>
   );
 }
@@ -738,6 +1039,339 @@ function metricValue(item: Sp500TopItem, metric: MetricKey) {
 
 function metricConfidence(item: Sp500TopItem, metric: MetricKey) {
   return metric === "score" ? item.confidence : (item.indicators[metric]?.confidence ?? 0);
+}
+
+function buildHeatmapItems(items: Sp500TopItem[], unknownSector: string): HeatmapItem[] {
+  return items
+    .map((item) => {
+      const marketCapValue = resolveMarketCapValue(item);
+      if (typeof marketCapValue !== "number" || !Number.isFinite(marketCapValue) || marketCapValue <= 0) return undefined;
+
+      return {
+        ...item,
+        marketCapValueResolved: marketCapValue,
+        sectorLabel: item.sector?.trim() || unknownSector,
+      };
+    })
+    .filter((item): item is HeatmapItem => Boolean(item))
+    .sort((left, right) => right.marketCapValueResolved - left.marketCapValueResolved);
+}
+
+function buildHeatmapLayout(items: HeatmapItem[], focusedSector: string | null): HeatmapSectorLayout[] {
+  const sectors = groupHeatmapItems(items);
+  const visibleSectors = focusedSector ? sectors.filter((sector) => sector.sector === focusedSector) : sectors;
+
+  if (!visibleSectors.length) return [];
+
+  const sectorRects = focusedSector
+    ? visibleSectors.map((sector) => ({
+        item: sector,
+        rect: { x: 0, y: 0, width: HEATMAP_WIDTH, height: HEATMAP_HEIGHT },
+      }))
+    : layoutTreemap(
+        visibleSectors.map((sector) => ({ item: sector, value: sector.marketCapValue })),
+        { x: 0, y: 0, width: HEATMAP_WIDTH, height: HEATMAP_HEIGHT },
+      );
+
+  return sectorRects.map(({ item: sector, rect }) => {
+    const sectorRect = focusedSector ? rect : insetRect(rect, HEATMAP_SECTOR_GAP);
+    const headerHeight = heatmapSectorHeaderHeight(sectorRect, Boolean(focusedSector));
+    const contentPadding = focusedSector ? 4 : sectorRect.width > 70 && sectorRect.height > 56 ? 3 : 1.5;
+    const contentRect = {
+      x: sectorRect.x + contentPadding,
+      y: sectorRect.y + headerHeight,
+      width: Math.max(0, sectorRect.width - contentPadding * 2),
+      height: Math.max(0, sectorRect.height - headerHeight - contentPadding),
+    };
+    const tiles = layoutTreemap(
+      sector.items.map((item) => ({ item, value: item.marketCapValueResolved })),
+      contentRect,
+    ).map((tile) => ({
+      item: tile.item,
+      rect: insetRect(tile.rect, HEATMAP_TILE_GAP),
+    }));
+
+    return {
+      sector: sector.sector,
+      rect: sectorRect,
+      headerHeight,
+      marketCapValue: sector.marketCapValue,
+      tiles,
+    };
+  });
+}
+
+function groupHeatmapItems(items: HeatmapItem[]) {
+  const bySector = new Map<string, HeatmapItem[]>();
+
+  for (const item of items) {
+    const sectorItems = bySector.get(item.sectorLabel) ?? [];
+    sectorItems.push(item);
+    bySector.set(item.sectorLabel, sectorItems);
+  }
+
+  return Array.from(bySector.entries())
+    .map(([sector, sectorItems]) => ({
+      sector,
+      items: sectorItems.sort((left, right) => right.marketCapValueResolved - left.marketCapValueResolved),
+      marketCapValue: sectorItems.reduce((sum, item) => sum + item.marketCapValueResolved, 0),
+    }))
+    .sort((left, right) => right.marketCapValue - left.marketCapValue || left.sector.localeCompare(right.sector));
+}
+
+function layoutTreemap<T>(entries: Array<{ item: T; value: number }>, rect: Rect): Array<{ item: T; rect: Rect }> {
+  const cleanEntries = entries.filter((entry) => Number.isFinite(entry.value) && entry.value > 0);
+  const totalValue = cleanEntries.reduce((sum, entry) => sum + entry.value, 0);
+  const totalArea = rect.width * rect.height;
+
+  if (!cleanEntries.length || totalValue <= 0 || totalArea <= 0) return [];
+
+  const pending = cleanEntries
+    .map((entry) => ({
+      item: entry.item,
+      area: (entry.value / totalValue) * totalArea,
+    }))
+    .sort((left, right) => right.area - left.area);
+  const result: Array<{ item: T; rect: Rect }> = [];
+  let remaining = { ...rect };
+  let row: Array<{ item: T; area: number }> = [];
+
+  while (pending.length) {
+    const next = pending[0];
+    const side = Math.min(remaining.width, remaining.height);
+
+    if (!row.length || worstAspectRatio([...row, next], side) <= worstAspectRatio(row, side)) {
+      row.push(next);
+      pending.shift();
+      continue;
+    }
+
+    const laidOut = layoutTreemapRow(row, remaining);
+    result.push(...laidOut.tiles);
+    remaining = laidOut.remaining;
+    row = [];
+  }
+
+  if (row.length) {
+    result.push(...layoutTreemapRow(row, remaining).tiles);
+  }
+
+  return result.filter((tile) => tile.rect.width > 0 && tile.rect.height > 0);
+}
+
+function layoutTreemapRow<T>(row: Array<{ item: T; area: number }>, rect: Rect) {
+  const area = row.reduce((sum, item) => sum + item.area, 0);
+
+  if (rect.width >= rect.height) {
+    const rowWidth = clampNumber(area / Math.max(rect.height, 1), 0, rect.width);
+    let consumedHeight = 0;
+    const tiles = row.map((entry, index) => {
+      const height =
+        index === row.length - 1 ? Math.max(0, rect.height - consumedHeight) : clampNumber(entry.area / Math.max(rowWidth, 1), 0, rect.height);
+      const tile = {
+        item: entry.item,
+        rect: {
+          x: rect.x,
+          y: rect.y + consumedHeight,
+          width: rowWidth,
+          height,
+        },
+      };
+      consumedHeight += height;
+      return tile;
+    });
+
+    return {
+      tiles,
+      remaining: {
+        x: rect.x + rowWidth,
+        y: rect.y,
+        width: Math.max(0, rect.width - rowWidth),
+        height: rect.height,
+      },
+    };
+  }
+
+  const rowHeight = clampNumber(area / Math.max(rect.width, 1), 0, rect.height);
+  let consumedWidth = 0;
+  const tiles = row.map((entry, index) => {
+    const width =
+      index === row.length - 1 ? Math.max(0, rect.width - consumedWidth) : clampNumber(entry.area / Math.max(rowHeight, 1), 0, rect.width);
+    const tile = {
+      item: entry.item,
+      rect: {
+        x: rect.x + consumedWidth,
+        y: rect.y,
+        width,
+        height: rowHeight,
+      },
+    };
+    consumedWidth += width;
+    return tile;
+  });
+
+  return {
+    tiles,
+    remaining: {
+      x: rect.x,
+      y: rect.y + rowHeight,
+      width: rect.width,
+      height: Math.max(0, rect.height - rowHeight),
+    },
+  };
+}
+
+function worstAspectRatio(row: Array<{ area: number }>, side: number) {
+  if (!row.length || side <= 0) return Number.POSITIVE_INFINITY;
+
+  const areas = row.map((item) => item.area).filter((area) => area > 0);
+  const sum = areas.reduce((total, area) => total + area, 0);
+  const max = Math.max(...areas);
+  const min = Math.min(...areas);
+  const sideSquared = side * side;
+
+  if (!sum || !min || !sideSquared) return Number.POSITIVE_INFINITY;
+
+  return Math.max((sideSquared * max) / (sum * sum), (sum * sum) / (sideSquared * min));
+}
+
+function heatmapSectorHeaderHeight(rect: Rect, focused: boolean) {
+  if (focused) return 32;
+  if (rect.height < 42) return Math.max(12, rect.height * 0.32);
+  return Math.min(26, Math.max(17, rect.height * 0.14));
+}
+
+function heatmapTileClass(rect: Rect) {
+  const area = rect.width * rect.height;
+  if (rect.width < 34 || rect.height < 22 || area < 520) return "pin";
+  if (rect.width < 58 || rect.height < 34 || area < 1200) return "tiny";
+  if (rect.width < 95 || rect.height < 58 || area < 3200) return "small";
+  return "large";
+}
+
+function rectToStyle(rect: Rect, containerWidth: number, containerHeight: number): CSSProperties {
+  return {
+    left: `${(rect.x / Math.max(containerWidth, 1)) * 100}%`,
+    top: `${(rect.y / Math.max(containerHeight, 1)) * 100}%`,
+    width: `${(rect.width / Math.max(containerWidth, 1)) * 100}%`,
+    height: `${(rect.height / Math.max(containerHeight, 1)) * 100}%`,
+  };
+}
+
+function relativeRect(rect: Rect, parent: Rect): Rect {
+  return {
+    x: rect.x - parent.x,
+    y: rect.y - parent.y,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function insetRect(rect: Rect, gap: number): Rect {
+  const inset = gap / 2;
+
+  return {
+    x: rect.x + inset,
+    y: rect.y + inset,
+    width: Math.max(0, rect.width - gap),
+    height: Math.max(0, rect.height - gap),
+  };
+}
+
+function scoreColorStyle(score: number, confidence: number): CSSProperties {
+  if (confidence <= 15) {
+    return {
+      backgroundColor: "#76808b",
+      color: "#ffffff",
+    };
+  }
+
+  const value = clampNumber(score, 0, 100);
+  const backgroundColor =
+    value < 50
+      ? mixHex("#9f1f2d", "#ef767a", value / 50)
+      : mixHex("#c77a1c", "#087344", (value - 50) / 50);
+
+  return {
+    backgroundColor,
+    color: relativeLuminance(backgroundColor) > 0.52 ? "#202124" : "#ffffff",
+  };
+}
+
+function resolveMarketCapValue(item: Sp500TopItem) {
+  if (typeof item.marketCapValue === "number" && Number.isFinite(item.marketCapValue)) {
+    return item.marketCapValue;
+  }
+
+  return parseCompactMarketCap(item.marketCap);
+}
+
+function parseCompactMarketCap(value?: string) {
+  if (!value) return undefined;
+
+  const normalized = value.trim().replace(/\s+/g, "").replace(",", ".");
+  const match = normalized.match(/^([\d.]+)([a-zA-Zа-яА-Я]*)$/u);
+  if (!match) return undefined;
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return undefined;
+
+  const suffix = match[2].toLowerCase();
+  if (suffix.startsWith("t") || suffix.includes("трл")) return amount * 1_000_000_000_000;
+  if (suffix.startsWith("b") || suffix.includes("млрд")) return amount * 1_000_000_000;
+  if (suffix.startsWith("m") || suffix.includes("млн")) return amount * 1_000_000;
+  if (suffix.startsWith("k") || suffix.includes("тис")) return amount * 1_000;
+  return amount;
+}
+
+function formatCompactNumber(value: number | undefined, language: Language) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+
+  return new Intl.NumberFormat(localeForPage(language), {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function formatDateTime(value: string, language: Language) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "N/A";
+
+  return new Intl.DateTimeFormat(localeForPage(language), {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function localeForPage(language: Language) {
+  return language === "uk" ? "uk-UA" : "en-US";
+}
+
+function mixHex(left: string, right: string, ratio: number) {
+  const leftRgb = hexToRgb(left);
+  const rightRgb = hexToRgb(right);
+  const amount = clampNumber(ratio, 0, 1);
+  const mixed = leftRgb.map((channel, index) => Math.round(channel + (rightRgb[index] - channel) * amount));
+
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function hexToRgb(value: string) {
+  const normalized = value.replace("#", "");
+  return [0, 2, 4].map((index) => Number.parseInt(normalized.slice(index, index + 2), 16));
+}
+
+function relativeLuminance(hex: string) {
+  const [red, green, blue] = hexToRgb(hex).map((channel) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function normalizeLanguage(value: string | null): Language {
