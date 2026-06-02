@@ -13,9 +13,31 @@ helper, not investment advice.
 - Ticker analysis with a 0-100 quality/growth/valuation score.
 - Five checklist areas: 5-year doubling pace, valuation, growth versus peers,
   margin quality, and PEG with SBC.
+- S&P 500 top page at `/sp500-top`, with live batch scanning and leaderboards
+  for each of the five indicators.
 - Automatic Yahoo peer suggestions plus manually saved peer groups.
 - Ukrainian and English UI copy.
-- Lightweight API route for analysis at `https://q-garp.netlify.app/api/analyze?ticker=AAPL`.
+- Lightweight API routes for ticker analysis, S&P 500 constituents, and batch
+  S&P 500 scoring.
+
+## App Pages
+
+- `/` - single-ticker Q-GARP checklist with score breakdown, peer controls, and
+  evidence for all five indicators.
+- `/sp500-top` - S&P 500 scanner that ranks companies by overall score and by
+  each indicator: doubling pace, valuation, growth, margins, and PEG with SBC.
+
+## API
+
+- `GET /api/analyze?ticker=AAPL` - returns the full checklist result for one
+  ticker. Optional query params: `lang=uk|en`, `peers=MSFT,GOOGL,AMZN`.
+- `GET /api/sp500-constituents` - returns the current S&P 500 constituent list
+  used by the scanner.
+- `GET /api/sp500-top?tickers=AAPL,MSFT,NVDA` - scores a small batch of S&P 500
+  tickers and returns compact fields needed for the top page.
+
+The deployed single-ticker API is available at
+`https://q-garp.netlify.app/api/analyze?ticker=AAPL`.
 
 ## Methodology
 
@@ -38,6 +60,12 @@ Financial data availability depends on Yahoo Finance coverage for each ticker.
 Some companies may have incomplete trailing financials, cash flow, SBC, peer, or
 historical valuation data. Peer groups are best treated as a starting point and
 reviewed manually for each company.
+
+The S&P 500 scanner gets its constituent universe from Wikipedia and uses Yahoo
+Finance for financial data. Batch scoring intentionally skips peer-snapshot and
+Yahoo recommendation lookups to avoid thousands of extra requests during a full
+index scan, so peer-sensitive indicators may be less precise than the
+single-ticker page with a curated peer group.
 
 ## Forking
 

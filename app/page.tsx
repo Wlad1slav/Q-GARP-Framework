@@ -18,6 +18,7 @@ import {
   UsersRound,
   XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { AnalysisResult, IndicatorResult, MetricTone } from "@/lib/analysis-types";
 import {
@@ -187,6 +188,11 @@ export default function Home() {
         </div>
 
         <div className="topActions">
+          <Link className="githubLink" href="/sp500-top" aria-label="S&P 500 Top">
+            <BarChart3 size={17} />
+            <span>S&P 500 Top</span>
+          </Link>
+
           <a
             className="githubLink"
             href="https://github.com/Wlad1slav/Q-GARP-Framework"

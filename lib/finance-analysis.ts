@@ -25,6 +25,12 @@ type PeerSnapshot = {
   returnOnEquity: number | undefined;
 };
 
+export type AnalyzeTickerOptions = {
+  skipRecommendedPeers?: boolean;
+  skipPeerSnapshots?: boolean;
+  skipHistoricalValuations?: boolean;
+};
+
 const DOUBLE_CAGR = Math.pow(2, 1 / 5) - 1;
 const MISSING_SIGNAL_SCORE = 42;
 const MISSING_CRITICAL_SCORE = 28;
@@ -96,6 +102,7 @@ export async function analyzeTicker(
   inputTicker: string,
   manualPeerInput: string[] = [],
   selectedLanguage: Language = defaultLanguage,
+  options: AnalyzeTickerOptions = {},
 ): Promise<AnalysisResult> {
   const language = normalizeLanguage(selectedLanguage);
   const symbol = normalizeTicker(inputTicker);
@@ -124,15 +131,17 @@ export async function analyzeTicker(
       getFundamentals(symbol, "trailing", "cash-flow", period1),
       getFundamentals(symbol, "trailing", "balance-sheet", period1),
       getQuoteSummary("SPY", ["summaryDetail", "price"]),
-      getRecommendations(symbol),
+      options.skipRecommendedPeers ? Promise.resolve([]) : getRecommendations(symbol),
     ]);
 
   const recommendedPeerSymbols = normalizePeerSymbols(recs.slice(0, 5), symbol);
   const manualPeerSymbols = normalizePeerSymbols(manualPeerInput, symbol);
   const peerSource: PeerSource = manualPeerSymbols.length ? "manual" : "recommended";
-  const peerSymbols = peerSource === "manual" ? manualPeerSymbols : recommendedPeerSymbols;
-  const peers = await getPeerSnapshots(peerSymbols);
-  const historicalValuations = await getHistoricalValuations(symbol, annualFinancials, annualCashFlow);
+  const peerSymbols = options.skipPeerSnapshots ? [] : peerSource === "manual" ? manualPeerSymbols : recommendedPeerSymbols;
+  const peers = options.skipPeerSnapshots ? [] : await getPeerSnapshots(peerSymbols);
+  const historicalValuations = options.skipHistoricalValuations
+    ? []
+    : await getHistoricalValuations(symbol, annualFinancials, annualCashFlow);
 
   const data = buildAnalysis({
     symbol,
