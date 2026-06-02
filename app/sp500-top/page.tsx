@@ -37,8 +37,15 @@ type ConstituentsPayload = {
 const supportedLanguages = ["uk", "en"] as const;
 const languageLabels: Record<Language, string> = { uk: "UA", en: "EN" };
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
-const BATCH_SIZE = 10;
+const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v1";
+const SP500_SCAN_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const BATCH_SIZE = 5;
 const TOP_COUNT = 10;
+
+type StoredSp500Scan = {
+  items: Sp500TopItem[];
+  expiresAt: number;
+};
 
 const indicatorIcons = {
   double: TrendingUp,
@@ -193,6 +200,7 @@ export default function Sp500TopPage() {
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("score");
   const abortRef = useRef<AbortController | null>(null);
   const shouldStopRef = useRef(false);
+  const didRestoreScanRef = useRef(false);
   const itemMapRef = useRef<Map<string, Sp500TopItem>>(new Map());
   const failedRef = useRef<Sp500TopFailure[]>([]);
   const processedRef = useRef<Set<string>>(new Set());
@@ -209,7 +217,7 @@ export default function Sp500TopPage() {
       setError("");
 
       try {
-        const response = await fetch("/api/sp500-constituents", { cache: "no-store" });
+        const response = await fetch("/api/sp500-constituents");
         const payload = (await response.json()) as ConstituentsPayload;
 
         if (!response.ok) {
@@ -250,6 +258,25 @@ export default function Sp500TopPage() {
     [constituents],
   );
 
+  useEffect(() => {
+    if (!constituents.length || didRestoreScanRef.current) return;
+    didRestoreScanRef.current = true;
+
+    const timer = window.setTimeout(() => {
+      const restoredItems = readSp500ScanCache(constituents);
+      if (!restoredItems.length) return;
+
+      itemMapRef.current = new Map(restoredItems.map((item) => [item.symbol, item]));
+      failedRef.current = [];
+      processedRef.current = new Set(restoredItems.map((item) => item.symbol));
+      setItems(restoredItems);
+      setFailed([]);
+      setProcessedCount(restoredItems.length);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [constituents]);
+
   const topByIndicator = useMemo(() => {
     return Object.fromEntries(
       sp500IndicatorIds.map((id) => [id, rankItems(items, id, TOP_COUNT)]),
@@ -278,6 +305,7 @@ export default function Sp500TopPage() {
       itemMapRef.current = new Map();
       failedRef.current = [];
       processedRef.current = new Set();
+      removeSp500ScanCache();
       setItems([]);
       setFailed([]);
       setProcessedCount(0);
@@ -300,7 +328,6 @@ export default function Sp500TopPage() {
 
       try {
         const response = await fetch(`/api/sp500-top?tickers=${batch.map(encodeURIComponent).join(",")}`, {
-          cache: "no-store",
           signal: controller.signal,
         });
         const payload = (await response.json()) as Sp500TopResponse & { message?: string };
@@ -342,13 +369,17 @@ export default function Sp500TopPage() {
     const failedBySymbol = new Map(failedRef.current.map((item) => [item.symbol, item]));
     for (const item of payload.failed) {
       failedBySymbol.set(item.symbol, item);
-      processedRef.current.add(item.symbol);
+      if (!isRetryableFailure(item.message)) {
+        processedRef.current.add(item.symbol);
+      }
     }
 
     failedRef.current = Array.from(failedBySymbol.values());
-    setItems(Array.from(itemMapRef.current.values()));
+    const nextItems = Array.from(itemMapRef.current.values());
+    setItems(nextItems);
     setFailed(failedRef.current);
     setProcessedCount(processedRef.current.size);
+    writeSp500ScanCache(nextItems);
   }
 
   if (loadingConstituents) {
@@ -715,4 +746,55 @@ function normalizeLanguage(value: string | null): Language {
 
 function isAbortError(value: unknown) {
   return value instanceof Error && value.name === "AbortError";
+}
+
+function isRetryableFailure(message: string) {
+  return /429|too many requests|rate.?limit/i.test(message);
+}
+
+function readSp500ScanCache(constituents: Sp500Constituent[]) {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(SP500_SCAN_CACHE_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as StoredSp500Scan) : undefined;
+    if (!parsed || parsed.expiresAt <= Date.now() || !Array.isArray(parsed.items)) {
+      window.localStorage.removeItem(SP500_SCAN_CACHE_STORAGE_KEY);
+      return [];
+    }
+
+    const metaBySymbol = new Map(constituents.map((constituent) => [constituent.symbol, constituent]));
+    const restored = parsed.items
+      .filter((item) => metaBySymbol.has(item.symbol))
+      .map((item) => {
+        const meta = metaBySymbol.get(item.symbol);
+        return {
+          ...item,
+          name: item.name || meta?.name || item.symbol,
+          sector: item.sector ?? meta?.sector,
+          industry: item.industry ?? meta?.industry,
+        };
+      });
+
+    return Array.from(new Map(restored.map((item) => [item.symbol, item])).values());
+  } catch {
+    return [];
+  }
+}
+
+function writeSp500ScanCache(items: Sp500TopItem[]) {
+  if (typeof window === "undefined") return;
+
+  const uniqueItems = Array.from(new Map(items.map((item) => [item.symbol, item])).values());
+  const payload: StoredSp500Scan = {
+    items: uniqueItems,
+    expiresAt: Date.now() + SP500_SCAN_CACHE_TTL_MS,
+  };
+
+  window.localStorage.setItem(SP500_SCAN_CACHE_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function removeSp500ScanCache() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(SP500_SCAN_CACHE_STORAGE_KEY);
 }

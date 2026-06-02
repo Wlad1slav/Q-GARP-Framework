@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { analyzeTicker } from "@/lib/finance-analysis";
+import { ANALYSIS_CACHE_TTL_SECONDS, getCachedAnalysis } from "@/lib/analysis-service";
 import { analysisCopy, normalizeLanguage } from "@/lib/i18n";
 
 export const runtime = "nodejs";
@@ -12,10 +12,18 @@ export async function GET(request: Request) {
   const language = normalizeLanguage(searchParams.get("lang"));
 
   try {
-    const result = await analyzeTicker(ticker, peers, language);
+    const { result, cached } = await getCachedAnalysis({
+      ticker,
+      peers,
+      language,
+      priority: "single",
+    });
+
     return NextResponse.json(result, {
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control": `private, max-age=${ANALYSIS_CACHE_TTL_SECONDS}, stale-while-revalidate=600`,
+        "X-Analysis-Cache": cached ? "hit" : "miss",
+        "X-Analysis-Priority": "single",
       },
     });
   } catch (error) {

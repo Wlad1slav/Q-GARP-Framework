@@ -1,6 +1,8 @@
 import YahooFinance from "yahoo-finance2";
 import type { AnalysisResult, EvidenceItem, IndicatorResult, MetricTone, PeerSource } from "./analysis-types";
 import { analysisCopy, defaultLanguage, localeForLanguage, normalizeLanguage, type Language } from "./i18n";
+import type { QueuePriority } from "./priority-task-queue";
+import { runCachedYahooRequest } from "./yahoo-request-queue";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -26,6 +28,7 @@ type PeerSnapshot = {
 };
 
 export type AnalyzeTickerOptions = {
+  queuePriority?: QueuePriority;
   skipRecommendedPeers?: boolean;
   skipPeerSnapshots?: boolean;
   skipHistoricalValuations?: boolean;
@@ -110,6 +113,7 @@ export async function analyzeTicker(
     throw new Error(analysisCopy[language].errors.invalidTicker);
   }
 
+  const queuePriority = options.queuePriority ?? "single";
   const period1 = yearStart(-7);
   const [
     quoteSummary,
@@ -123,25 +127,25 @@ export async function analyzeTicker(
     recs,
   ] =
     await Promise.all([
-      getQuoteSummary(symbol),
-      getFundamentals(symbol, "annual", "financials", period1),
-      getFundamentals(symbol, "annual", "cash-flow", period1),
-      getFundamentals(symbol, "annual", "balance-sheet", period1),
-      getFundamentals(symbol, "trailing", "financials", period1),
-      getFundamentals(symbol, "trailing", "cash-flow", period1),
-      getFundamentals(symbol, "trailing", "balance-sheet", period1),
-      getQuoteSummary("SPY", ["summaryDetail", "price"]),
-      options.skipRecommendedPeers ? Promise.resolve([]) : getRecommendations(symbol),
+      getQuoteSummary(symbol, undefined, queuePriority),
+      getFundamentals(symbol, "annual", "financials", period1, queuePriority),
+      getFundamentals(symbol, "annual", "cash-flow", period1, queuePriority),
+      getFundamentals(symbol, "annual", "balance-sheet", period1, queuePriority),
+      getFundamentals(symbol, "trailing", "financials", period1, queuePriority),
+      getFundamentals(symbol, "trailing", "cash-flow", period1, queuePriority),
+      getFundamentals(symbol, "trailing", "balance-sheet", period1, queuePriority),
+      getQuoteSummary("SPY", ["summaryDetail", "price"], queuePriority),
+      options.skipRecommendedPeers ? Promise.resolve([]) : getRecommendations(symbol, queuePriority),
     ]);
 
   const recommendedPeerSymbols = normalizePeerSymbols(recs.slice(0, 5), symbol);
   const manualPeerSymbols = normalizePeerSymbols(manualPeerInput, symbol);
   const peerSource: PeerSource = manualPeerSymbols.length ? "manual" : "recommended";
   const peerSymbols = options.skipPeerSnapshots ? [] : peerSource === "manual" ? manualPeerSymbols : recommendedPeerSymbols;
-  const peers = options.skipPeerSnapshots ? [] : await getPeerSnapshots(peerSymbols);
+  const peers = options.skipPeerSnapshots ? [] : await getPeerSnapshots(peerSymbols, queuePriority);
   const historicalValuations = options.skipHistoricalValuations
     ? []
-    : await getHistoricalValuations(symbol, annualFinancials, annualCashFlow);
+    : await getHistoricalValuations(symbol, annualFinancials, annualCashFlow, queuePriority);
 
   const data = buildAnalysis({
     symbol,
@@ -184,7 +188,7 @@ function yearStart(offset: number) {
   return date.toISOString().slice(0, 10);
 }
 
-async function getQuoteSummary(symbol: string, modules?: string[]) {
+async function getQuoteSummary(symbol: string, modules?: string[], priority: QueuePriority = "single") {
   const selectedModules =
     modules ??
     [
@@ -197,26 +201,36 @@ async function getQuoteSummary(symbol: string, modules?: string[]) {
       "quoteType",
     ];
 
-  return (await yahooFinance.quoteSummary(
-    symbol,
-    {
-      formatted: false,
-      modules: selectedModules as never,
-    },
-    { validateResult: false },
+  return (await runCachedYahooRequest(`quoteSummary:${symbol}:${selectedModules.join(",")}`, priority, () =>
+    yahooFinance.quoteSummary(
+      symbol,
+      {
+        formatted: false,
+        modules: selectedModules as never,
+      },
+      { validateResult: false },
+    ),
   )) as AnyRecord;
 }
 
-async function getFundamentals(symbol: string, type: "annual" | "trailing", module: FundamentalsModule, period1: string) {
+async function getFundamentals(
+  symbol: string,
+  type: "annual" | "trailing",
+  module: FundamentalsModule,
+  period1: string,
+  priority: QueuePriority = "single",
+) {
   try {
-    const rows = (await yahooFinance.fundamentalsTimeSeries(
-      symbol,
-      {
-        period1,
-        type,
-        module,
-      },
-      { validateResult: false },
+    const rows = (await runCachedYahooRequest(`fundamentals:${symbol}:${type}:${module}:${period1}`, priority, () =>
+      yahooFinance.fundamentalsTimeSeries(
+        symbol,
+        {
+          period1,
+          type,
+          module,
+        },
+        { validateResult: false },
+      ),
     )) as StatementRow[];
 
     return sortRows(rows);
@@ -225,9 +239,11 @@ async function getFundamentals(symbol: string, type: "annual" | "trailing", modu
   }
 }
 
-async function getRecommendations(symbol: string) {
+async function getRecommendations(symbol: string, priority: QueuePriority = "single") {
   try {
-    const result = (await yahooFinance.recommendationsBySymbol(symbol, {}, { validateResult: false })) as AnyRecord;
+    const result = (await runCachedYahooRequest(`recommendations:${symbol}`, priority, () =>
+      yahooFinance.recommendationsBySymbol(symbol, {}, { validateResult: false }),
+    )) as AnyRecord;
     const rows = Array.isArray(result.recommendedSymbols) ? result.recommendedSymbols : [];
     return rows
       .map((item) => (isRecord(item) && typeof item.symbol === "string" ? item.symbol : undefined))
@@ -237,7 +253,7 @@ async function getRecommendations(symbol: string) {
   }
 }
 
-async function getPeerSnapshots(symbols: string[]): Promise<PeerSnapshot[]> {
+async function getPeerSnapshots(symbols: string[], priority: QueuePriority): Promise<PeerSnapshot[]> {
   const uniqueSymbols = Array.from(new Set(symbols)).slice(0, 8);
   const snapshots = await Promise.all(
     uniqueSymbols.map(async (symbol) => {
@@ -247,7 +263,7 @@ async function getPeerSnapshots(symbols: string[]): Promise<PeerSnapshot[]> {
           "summaryDetail",
           "defaultKeyStatistics",
           "financialData",
-        ]);
+        ], priority);
         const financialData = asRecord(summary.financialData);
         const summaryDetail = asRecord(summary.summaryDetail);
         const keyStats = asRecord(summary.defaultKeyStatistics);
@@ -272,7 +288,12 @@ async function getPeerSnapshots(symbols: string[]): Promise<PeerSnapshot[]> {
   return snapshots.filter((snapshot): snapshot is PeerSnapshot => Boolean(snapshot));
 }
 
-async function getHistoricalValuations(symbol: string, financials: StatementRow[], cashFlow: StatementRow[]) {
+async function getHistoricalValuations(
+  symbol: string,
+  financials: StatementRow[],
+  cashFlow: StatementRow[],
+  priority: QueuePriority,
+) {
   const rows = financials
     .map((financial) => {
       const date = dateValue(financial.date);
@@ -299,13 +320,16 @@ async function getHistoricalValuations(symbol: string, financials: StatementRow[
   start.setUTCDate(start.getUTCDate() - 10);
 
   try {
-    const chart = (await yahooFinance.chart(
-      symbol,
-      {
-        period1: start.toISOString().slice(0, 10),
-        interval: "1d",
-      },
-      { validateResult: false },
+    const chartPeriod1 = start.toISOString().slice(0, 10);
+    const chart = (await runCachedYahooRequest(`chart:${symbol}:${chartPeriod1}:1d`, priority, () =>
+      yahooFinance.chart(
+        symbol,
+        {
+          period1: chartPeriod1,
+          interval: "1d",
+        },
+        { validateResult: false },
+      ),
     )) as AnyRecord;
     const prices = chartToPrices(chart);
 

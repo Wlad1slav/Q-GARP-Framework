@@ -48,6 +48,14 @@ const toneIcons = {
 } satisfies Record<MetricTone, typeof CheckCircle2>;
 
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
+const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v1";
+const ANALYSIS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_STORED_ANALYSES = 60;
+
+type CachedAnalysisEntry = {
+  result: AnalysisResult;
+  expiresAt: number;
+};
 
 export default function Home() {
   const [language, setLanguage] = useState<Language>(defaultLanguage);
@@ -75,6 +83,18 @@ export default function Home() {
       const requestCopy = uiCopy[requestLanguage];
       const peers = peerOverride === undefined ? readSavedPeerGroup(cleanTicker) : (peerOverride ?? []);
       const params = new URLSearchParams({ ticker: cleanTicker, lang: requestLanguage });
+      const cacheKey = analysisCacheKey(cleanTicker, peers, requestLanguage);
+      const cachedAnalysis = readCachedAnalysis(cacheKey);
+
+      if (cachedAnalysis) {
+        setAnalysis(cachedAnalysis);
+        setPeerInput(cachedAnalysis.peerSymbols?.join(", ") ?? "");
+        setPromptCopied(false);
+        setLastTicker(normalizeTicker(cleanTicker));
+        setError("");
+        return;
+      }
+
       if (peers.length) {
         params.set("peers", peers.join(","));
       }
@@ -83,13 +103,12 @@ export default function Home() {
       setError("");
 
       try {
-        const response = await fetch(`/api/analyze?${params.toString()}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json();
+        const response = await fetch(`/api/analyze?${params.toString()}`);
+        const payload = (await response.json()) as AnalysisResult & { message?: string };
         if (!response.ok) {
           throw new Error(payload.message ?? requestCopy.errors.loadData);
         }
+        writeCachedAnalysis(cacheKey, payload);
         setAnalysis(payload);
         setPeerInput(payload.peerSymbols?.join(", ") ?? "");
         setPromptCopied(false);
@@ -636,4 +655,60 @@ function removeSavedPeerGroup(ticker: string) {
   const groups = readPeerGroups();
   delete groups[symbol];
   window.localStorage.setItem(PEER_STORAGE_KEY, JSON.stringify(groups));
+}
+
+function analysisCacheKey(ticker: string, peers: string[], language: Language) {
+  const symbol = normalizeTicker(ticker);
+  const peerKey = normalizePeerInput(peers.join(","), symbol).join(",");
+  return `${language}|${symbol}|${peerKey}`;
+}
+
+function readCachedAnalysis(key: string): AnalysisResult | null {
+  if (typeof window === "undefined") return null;
+
+  const cache = readAnalysisCache();
+  const entry = cache[key];
+  if (!entry) return null;
+
+  if (entry.expiresAt <= Date.now()) {
+    delete cache[key];
+    window.localStorage.setItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(cache));
+    return null;
+  }
+
+  return entry.result;
+}
+
+function writeCachedAnalysis(key: string, result: AnalysisResult) {
+  if (typeof window === "undefined") return;
+
+  const cache = pruneAnalysisCache(readAnalysisCache());
+  cache[key] = {
+    result,
+    expiresAt: Date.now() + ANALYSIS_CACHE_TTL_MS,
+  };
+
+  window.localStorage.setItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(pruneAnalysisCache(cache)));
+}
+
+function readAnalysisCache(): Record<string, CachedAnalysisEntry> {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_CACHE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function pruneAnalysisCache(cache: Record<string, CachedAnalysisEntry>) {
+  const now = Date.now();
+  const freshEntries = Object.entries(cache)
+    .filter(([, entry]) => entry?.expiresAt > now && entry?.result)
+    .sort(([, left], [, right]) => right.expiresAt - left.expiresAt)
+    .slice(0, MAX_STORED_ANALYSES);
+
+  return Object.fromEntries(freshEntries) as Record<string, CachedAnalysisEntry>;
 }

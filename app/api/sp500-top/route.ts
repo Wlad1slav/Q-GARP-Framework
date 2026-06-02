@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { analyzeTicker } from "@/lib/finance-analysis";
+import { ANALYSIS_CACHE_TTL_MS, ANALYSIS_CACHE_TTL_SECONDS, getCachedAnalysis } from "@/lib/analysis-service";
 import type { AnalysisResult } from "@/lib/analysis-types";
 import type { Sp500IndicatorId, Sp500TopItem } from "@/lib/sp500-top-types";
 import { sp500IndicatorIds, type Sp500TopFailure, type Sp500TopResponse } from "@/lib/sp500-top-types";
@@ -7,10 +7,9 @@ import { sp500IndicatorIds, type Sp500TopFailure, type Sp500TopResponse } from "
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_BATCH_SIZE = 10;
-const CONCURRENCY = 2;
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const CACHE_VERSION = "full-v1";
+const MAX_BATCH_SIZE = 5;
+const CONCURRENCY = 1;
+const CACHE_VERSION = "full-v2";
 
 const analysisCache = new Map<string, { item: Sp500TopItem; expiresAt: number }>();
 
@@ -52,7 +51,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json(payload, {
     headers: {
-      "Cache-Control": "no-store",
+      "Cache-Control": `private, max-age=${ANALYSIS_CACHE_TTL_SECONDS}, stale-while-revalidate=600`,
+      "X-Analysis-Priority": "sp500",
     },
   });
 }
@@ -79,15 +79,20 @@ async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached:
     return { item: cached.item, cached: true };
   }
 
-  const analysis = await analyzeTicker(symbol, [], "en");
+  const { result: analysis, cached: analysisCached } = await getCachedAnalysis({
+    ticker: symbol,
+    peers: [],
+    language: "en",
+    priority: "sp500",
+  });
   const item = toTopItem(analysis);
 
   analysisCache.set(cacheKey, {
     item,
-    expiresAt: now + CACHE_TTL_MS,
+    expiresAt: now + ANALYSIS_CACHE_TTL_MS,
   });
 
-  return { item, cached: false };
+  return { item, cached: analysisCached };
 }
 
 function toTopItem(analysis: AnalysisResult): Sp500TopItem {
