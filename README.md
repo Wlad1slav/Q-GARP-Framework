@@ -17,6 +17,21 @@ helper, not investment advice.
 - Ukrainian and English UI copy.
 - Lightweight API route for analysis at `https://q-garp.netlify.app/api/analyze?ticker=AAPL`.
 
+## Methodology
+
+The score is a confidence-aware Q-GARP checklist, not a simple average. The app
+selects a sector profile, scores five weighted indicators, calculates data
+confidence, then subtracts a risk/data penalty:
+
+```text
+final score = weighted raw score - risk/data penalty
+```
+
+Missing critical data is penalized instead of being silently ignored. The UI
+shows the final score, raw score, confidence, scoring profile, penalty, and risk
+flags. See [METHODOLOGY.md](METHODOLOGY.md) for the full formulas, weights, and
+infographic-style Mermaid diagrams.
+
 ## Data Notes
 
 Financial data availability depends on Yahoo Finance coverage for each ticker.
