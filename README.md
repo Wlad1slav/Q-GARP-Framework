@@ -29,8 +29,7 @@ final score = weighted raw score - risk/data penalty
 
 Missing critical data is penalized instead of being silently ignored. The UI
 shows the final score, raw score, confidence, scoring profile, penalty, and risk
-flags. See [METHODOLOGY.md](METHODOLOGY.md) for the full formulas, weights, and
-infographic-style Mermaid diagrams.
+flags. See [METHODOLOGY.md](METHODOLOGY.md) for the full formulas, weights.
 
 ## Data Notes
 
