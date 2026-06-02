@@ -8,6 +8,10 @@ compensation.
 The app uses Yahoo Finance data through `yahoo-finance2`. It is a research
 helper, not investment advice.
 
+<img width="1506" height="900" alt="Screenshot 2026-06-02 162707" src="https://github.com/user-attachments/assets/66b34eb3-413c-49fb-8dba-26385d2f746a" />
+<img width="1216" height="894" alt="Screenshot 2026-06-02 162749" src="https://github.com/user-attachments/assets/24d4a2cc-90d0-47f2-b651-8fedb42bbe07" />
+
+
 ## Features
 
 - Ticker analysis with a 0-100 quality/growth/valuation score.
