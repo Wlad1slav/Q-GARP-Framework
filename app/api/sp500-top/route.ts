@@ -7,9 +7,10 @@ import { sp500IndicatorIds, type Sp500TopFailure, type Sp500TopResponse } from "
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_BATCH_SIZE = 5;
+const MAX_BATCH_SIZE = 1;
 const CONCURRENCY = 1;
 const CACHE_VERSION = "full-v3";
+const TICKER_TIMEOUT_MS = 30_000;
 
 const analysisCache = new Map<string, { item: Sp500TopItem; expiresAt: number }>();
 
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "Provide at least one ticker in the tickers query parameter." }, { status: 400 });
   }
 
-  const outcomes = await mapWithConcurrency(symbols, CONCURRENCY, getTopItem);
+  const outcomes = await mapWithConcurrency(symbols, CONCURRENCY, getTopItemWithTimeout);
   const items: Sp500TopItem[] = [];
   const failed: Sp500TopFailure[] = [];
   let cached = 0;
@@ -93,6 +94,27 @@ async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached:
   });
 
   return { item, cached: analysisCached };
+}
+
+async function getTopItemWithTimeout(symbol: string): Promise<{ item: Sp500TopItem; cached: boolean }> {
+  return withTimeout(getTopItem(symbol), TICKER_TIMEOUT_MS, `${symbol} exceeded the server time budget.`);
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 function toTopItem(analysis: AnalysisResult): Sp500TopItem {

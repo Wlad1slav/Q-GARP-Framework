@@ -44,7 +44,7 @@ const languageLabels: Record<Language, string> = { uk: "UA", en: "EN" };
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v1";
 const SP500_SCAN_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 1;
 const TOP_COUNT = 10;
 
 type StoredSp500Scan = {
@@ -305,7 +305,7 @@ export default function Sp500TopPage() {
 
       try {
         const response = await fetch("/api/sp500-constituents");
-        const payload = (await response.json()) as ConstituentsPayload;
+        const payload = await readJsonPayload<ConstituentsPayload>(response, copy[initialLanguage].errors.constituents);
 
         if (!response.ok) {
           throw new Error(payload.message ?? copy[initialLanguage].errors.constituents);
@@ -427,7 +427,7 @@ export default function Sp500TopPage() {
         const response = await fetch(`/api/sp500-top?tickers=${batch.map(encodeURIComponent).join(",")}`, {
           signal: controller.signal,
         });
-        const payload = (await response.json()) as Sp500TopResponse & { message?: string };
+        const payload = await readJsonPayload<Sp500TopResponse & { message?: string }>(response, t.errors.scan);
 
         if (!response.ok) {
           throw new Error(payload.message ?? t.errors.scan);
@@ -1384,6 +1384,24 @@ function isAbortError(value: unknown) {
 
 function isRetryableFailure(message: string) {
   return /429|too many requests|rate.?limit/i.test(message);
+}
+
+async function readJsonPayload<T extends { message?: string }>(response: Response, fallbackMessage: string): Promise<T> {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    throw new Error(formatResponseError(response, fallbackMessage));
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(formatResponseError(response, fallbackMessage));
+  }
+}
+
+function formatResponseError(response: Response, fallbackMessage: string) {
+  return response.ok ? fallbackMessage : `${fallbackMessage} HTTP ${response.status}.`;
 }
 
 function readSp500ScanCache(constituents: Sp500Constituent[]) {

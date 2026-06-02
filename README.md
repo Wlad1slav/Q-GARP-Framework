@@ -33,8 +33,10 @@ helper, not investment advice.
   ticker. Optional query params: `lang=uk|en`, `peers=MSFT,GOOGL,AMZN`.
 - `GET /api/sp500-constituents` - returns the current S&P 500 constituent list
   used by the scanner.
-- `GET /api/sp500-top?tickers=AAPL,MSFT,NVDA` - scores a small batch of S&P 500
-  tickers and returns compact fields needed for the top page.
+- `GET /api/sp500-top?tickers=AAPL` - scores one S&P 500 ticker and returns
+  compact fields needed for the top page. The serverless deployment keeps this
+  endpoint intentionally small to avoid function timeouts while scanning the
+  full index.
 
 The deployed single-ticker API is available at
 `https://q-garp.netlify.app/api/analyze?ticker=AAPL`.
