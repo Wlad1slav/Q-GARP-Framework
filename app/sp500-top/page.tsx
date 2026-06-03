@@ -6,6 +6,8 @@ import {
   BadgeDollarSign,
   BarChart3,
   Calculator,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   CircleAlert,
   ExternalLink,
@@ -15,6 +17,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Search,
   ShieldCheck,
   TrendingUp,
   X,
@@ -46,6 +49,10 @@ const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v1";
 const SP500_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const BATCH_SIZE = 1;
 const TOP_COUNT = 10;
+const RANKING_PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+const RANKING_ALL_PAGE_SIZE = "all";
+
+type RankingPageSize = (typeof RANKING_PAGE_SIZE_OPTIONS)[number] | typeof RANKING_ALL_PAGE_SIZE;
 
 type StoredSp500Scan = {
   items: Sp500TopItem[];
@@ -67,6 +74,11 @@ type Rect = {
 type HeatmapTile = {
   item: HeatmapItem;
   rect: Rect;
+};
+
+type RankedSp500Row = {
+  item: Sp500TopItem;
+  rank: number;
 };
 
 type HeatmapSectorLayout = {
@@ -107,6 +119,14 @@ const copy = {
     peerNote:
       "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера, з Yahoo recommended peers. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
     tableTitle: "Детальний рейтинг",
+    rankingSearchPlaceholder: "Пошук за тикером, компанією чи сектором",
+    rankingNoMatches: "Нічого не знайдено за цим пошуком.",
+    rankingShowing: "Показано",
+    rankingRowsPerPage: "Рядків",
+    rankingAllRows: "Усі",
+    rankingPage: "Сторінка",
+    rankingPrevious: "Назад",
+    rankingNext: "Вперед",
     heatmap: {
       title: "Хітмапа S&P 500",
       subtitle: "Score компаній за секторами",
@@ -191,6 +211,14 @@ const copy = {
     peerNote:
       "Top scores use the same default methodology as the ticker checklist, with Yahoo recommended peers. Browser-saved manual peers from the single-ticker page are not applied here.",
     tableTitle: "Detailed ranking",
+    rankingSearchPlaceholder: "Search ticker, company, or sector",
+    rankingNoMatches: "No companies match that search.",
+    rankingShowing: "Showing",
+    rankingRowsPerPage: "Rows",
+    rankingAllRows: "All",
+    rankingPage: "Page",
+    rankingPrevious: "Previous",
+    rankingNext: "Next",
     heatmap: {
       title: "S&P 500 Heatmap",
       subtitle: "Company scores by sector",
@@ -283,6 +311,9 @@ export default function Sp500TopPage() {
   const [currentBatch, setCurrentBatch] = useState("");
   const [error, setError] = useState("");
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("score");
+  const [rankingSearch, setRankingSearch] = useState("");
+  const [rankingPage, setRankingPage] = useState(1);
+  const [rankingPageSize, setRankingPageSize] = useState<RankingPageSize>(50);
   const [focusedHeatmapSector, setFocusedHeatmapSector] = useState<string | null>(null);
   const [selectedHeatmapItem, setSelectedHeatmapItem] = useState<HeatmapItem | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -380,7 +411,24 @@ export default function Sp500TopPage() {
   const activeSelectedHeatmapItem = selectedHeatmapItem
     ? (heatmapItems.find((item) => item.symbol === selectedHeatmapItem.symbol) ?? null)
     : null;
-  const rankedRows = useMemo(() => rankItems(items, selectedMetric, 100), [items, selectedMetric]);
+  const rankedRows = useMemo(
+    () => rankItems(items, selectedMetric).map((item, index) => ({ item, rank: index + 1 })),
+    [items, selectedMetric],
+  );
+  const filteredRankedRows = useMemo(() => filterRankedRows(rankedRows, rankingSearch), [rankedRows, rankingSearch]);
+  const rankingPageCount =
+    rankingPageSize === RANKING_ALL_PAGE_SIZE ? 1 : Math.max(1, Math.ceil(filteredRankedRows.length / rankingPageSize));
+  const safeRankingPage = Math.min(rankingPage, rankingPageCount);
+  const rankingPageStartIndex = rankingPageSize === RANKING_ALL_PAGE_SIZE ? 0 : (safeRankingPage - 1) * rankingPageSize;
+  const visibleRankingRows = useMemo(() => {
+    if (rankingPageSize === RANKING_ALL_PAGE_SIZE) return filteredRankedRows;
+    return filteredRankedRows.slice(rankingPageStartIndex, rankingPageStartIndex + rankingPageSize);
+  }, [filteredRankedRows, rankingPageSize, rankingPageStartIndex]);
+  const rankingRangeStart = filteredRankedRows.length ? rankingPageStartIndex + 1 : 0;
+  const rankingRangeEnd =
+    rankingPageSize === RANKING_ALL_PAGE_SIZE
+      ? filteredRankedRows.length
+      : Math.min(rankingPageStartIndex + rankingPageSize, filteredRankedRows.length);
   const progress = constituents.length ? Math.round((processedCount / constituents.length) * 100) : 0;
   const isComplete = constituents.length > 0 && processedCount >= constituents.length;
   const statusText = scanning ? t.scanning : isComplete ? t.complete : processedCount ? t.stopped : t.idle;
@@ -598,31 +646,71 @@ export default function Sp500TopPage() {
             <h2>{t.tableTitle}</h2>
             <p>{selectedMetric === "score" ? t.overall : t.indicators[selectedMetric].title}</p>
           </div>
-          <div className="metricTabs" role="group" aria-label={t.tableTitle}>
-            <button
-              aria-pressed={selectedMetric === "score"}
-              className={`metricTab ${selectedMetric === "score" ? "active" : ""}`}
-              type="button"
-              onClick={() => setSelectedMetric("score")}
-            >
-              {t.overall}
-            </button>
-            {sp500IndicatorIds.map((id) => (
+          <div className="rankingControls">
+            <div className="metricTabs" role="group" aria-label={t.tableTitle}>
               <button
-                aria-pressed={selectedMetric === id}
-                className={`metricTab ${selectedMetric === id ? "active" : ""}`}
-                key={id}
+                aria-pressed={selectedMetric === "score"}
+                className={`metricTab ${selectedMetric === "score" ? "active" : ""}`}
                 type="button"
-                onClick={() => setSelectedMetric(id)}
+                onClick={() => {
+                  setSelectedMetric("score");
+                  setRankingPage(1);
+                }}
               >
-                {t.indicators[id].short}
+                {t.overall}
               </button>
-            ))}
+              {sp500IndicatorIds.map((id) => (
+                <button
+                  aria-pressed={selectedMetric === id}
+                  className={`metricTab ${selectedMetric === id ? "active" : ""}`}
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedMetric(id);
+                    setRankingPage(1);
+                  }}
+                >
+                  {t.indicators[id].short}
+                </button>
+              ))}
+            </div>
+
+            <label className="rankingSearch">
+              <Search size={16} />
+              <input
+                aria-label={t.rankingSearchPlaceholder}
+                placeholder={t.rankingSearchPlaceholder}
+                type="search"
+                value={rankingSearch}
+                onChange={(event) => {
+                  setRankingSearch(event.currentTarget.value);
+                  setRankingPage(1);
+                }}
+              />
+            </label>
           </div>
         </div>
 
-        {items.length ? (
-          <RankingTable items={rankedRows} language={language} metric={selectedMetric} />
+        {items.length && filteredRankedRows.length ? (
+          <>
+            <RankingTable rows={visibleRankingRows} language={language} metric={selectedMetric} />
+            <RankingPagination
+              language={language}
+              page={safeRankingPage}
+              pageCount={rankingPageCount}
+              pageSize={rankingPageSize}
+              rangeEnd={rankingRangeEnd}
+              rangeStart={rankingRangeStart}
+              total={filteredRankedRows.length}
+              onPageChange={setRankingPage}
+              onPageSizeChange={(pageSize) => {
+                setRankingPageSize(pageSize);
+                setRankingPage(1);
+              }}
+            />
+          </>
+        ) : items.length ? (
+          <div className="rankingEmpty">{t.rankingNoMatches}</div>
         ) : (
           <div className="rankingEmpty">{t.noRows}</div>
         )}
@@ -769,6 +857,17 @@ function Sp500Heatmap({
                     type="button"
                     onClick={() => onSelectItem(item)}
                   >
+                    <span className="heatmapTileLogo" aria-hidden="true">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt=""
+                        loading="lazy"
+                        src={companyLogoUrl(item.symbol)}
+                        onError={(event) => {
+                          event.currentTarget.parentElement?.setAttribute("data-hidden", "true");
+                        }}
+                      />
+                    </span>
                     <span className="heatmapTileSymbol">{item.symbol}</span>
                     <strong>{item.score}</strong>
                     <small>{item.marketCap ?? formatCompactNumber(item.marketCapValueResolved, language)}</small>
@@ -932,7 +1031,7 @@ function LeaderRow({ item, metric, rank }: { item: Sp500TopItem; metric: Sp500In
   );
 }
 
-function RankingTable({ items, language, metric }: { items: Sp500TopItem[]; language: Language; metric: MetricKey }) {
+function RankingTable({ rows, language, metric }: { rows: RankedSp500Row[]; language: Language; metric: MetricKey }) {
   const t = copy[language];
 
   return (
@@ -950,11 +1049,79 @@ function RankingTable({ items, language, metric }: { items: Sp500TopItem[]; lang
           </tr>
         </thead>
         <tbody>
-          {items.map((item, index) => (
-            <RankingRow item={item} key={`${metric}-${item.symbol}`} language={language} metric={metric} rank={index + 1} />
+          {rows.map(({ item, rank }) => (
+            <RankingRow item={item} key={`${metric}-${item.symbol}`} language={language} metric={metric} rank={rank} />
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function RankingPagination({
+  language,
+  page,
+  pageCount,
+  pageSize,
+  rangeEnd,
+  rangeStart,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  language: Language;
+  page: number;
+  pageCount: number;
+  pageSize: RankingPageSize;
+  rangeEnd: number;
+  rangeStart: number;
+  total: number;
+  onPageChange: (page: number | ((page: number) => number)) => void;
+  onPageSizeChange: (pageSize: RankingPageSize) => void;
+}) {
+  const t = copy[language];
+
+  return (
+    <div className="rankingPagination">
+      <div className="rankingPageSummary">
+        {t.rankingShowing} {rangeStart}-{rangeEnd} / {total}
+      </div>
+
+      <label className="rankingPageSize">
+        <span>{t.rankingRowsPerPage}</span>
+        <select value={String(pageSize)} onChange={(event) => onPageSizeChange(parseRankingPageSize(event.currentTarget.value))}>
+          {RANKING_PAGE_SIZE_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+          <option value={RANKING_ALL_PAGE_SIZE}>{t.rankingAllRows}</option>
+        </select>
+      </label>
+
+      <div className="rankingPageButtons">
+        <button
+          className="iconButton secondaryButton"
+          disabled={page <= 1}
+          title={t.rankingPrevious}
+          type="button"
+          onClick={() => onPageChange((currentPage) => Math.max(1, currentPage - 1))}
+        >
+          <ChevronLeft size={17} />
+        </button>
+        <span>
+          {t.rankingPage} {page} / {pageCount}
+        </span>
+        <button
+          className="iconButton secondaryButton"
+          disabled={page >= pageCount}
+          title={t.rankingNext}
+          type="button"
+          onClick={() => onPageChange((currentPage) => Math.min(pageCount, currentPage + 1))}
+        >
+          <ChevronRight size={17} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -979,8 +1146,21 @@ function RankingRow({
       <td className="rankCell">{rank}</td>
       <td>
         <div className="tableCompany">
-          <strong>{item.symbol}</strong>
-          <span>{item.name}</span>
+          <span className="tableCompanyLogo" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt=""
+              loading="lazy"
+              src={companyLogoUrl(item.symbol)}
+              onError={(event) => {
+                event.currentTarget.parentElement?.setAttribute("data-hidden", "true");
+              }}
+            />
+          </span>
+          <span className="tableCompanyText">
+            <strong>{item.symbol}</strong>
+            <span>{item.name}</span>
+          </span>
         </div>
       </td>
       <td>
@@ -1019,18 +1199,40 @@ function StatePanel({
   );
 }
 
-function rankItems(items: Sp500TopItem[], metric: MetricKey, limit: number) {
-  return [...items]
-    .sort((left, right) => {
-      const scoreDelta = metricValue(right, metric) - metricValue(left, metric);
-      if (scoreDelta) return scoreDelta;
+function rankItems(items: Sp500TopItem[], metric: MetricKey, limit = Number.POSITIVE_INFINITY) {
+  const sorted = [...items].sort((left, right) => {
+    const scoreDelta = metricValue(right, metric) - metricValue(left, metric);
+    if (scoreDelta) return scoreDelta;
 
-      const confidenceDelta = metricConfidence(right, metric) - metricConfidence(left, metric);
-      if (confidenceDelta) return confidenceDelta;
+    const confidenceDelta = metricConfidence(right, metric) - metricConfidence(left, metric);
+    if (confidenceDelta) return confidenceDelta;
 
-      return right.score - left.score || left.symbol.localeCompare(right.symbol);
-    })
-    .slice(0, limit);
+    return right.score - left.score || left.symbol.localeCompare(right.symbol);
+  });
+
+  return Number.isFinite(limit) ? sorted.slice(0, limit) : sorted;
+}
+
+function filterRankedRows(rows: RankedSp500Row[], queryValue: string) {
+  const query = normalizeSearchQuery(queryValue);
+  if (!query) return rows;
+
+  return rows.filter(({ item }) =>
+    [item.symbol, item.name, item.sector, item.industry, item.exchange].some((value) => normalizeSearchQuery(value ?? "").includes(query)),
+  );
+}
+
+function normalizeSearchQuery(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function parseRankingPageSize(value: string): RankingPageSize {
+  if (value === RANKING_ALL_PAGE_SIZE) return RANKING_ALL_PAGE_SIZE;
+
+  const parsed = Number(value);
+  return RANKING_PAGE_SIZE_OPTIONS.includes(parsed as (typeof RANKING_PAGE_SIZE_OPTIONS)[number])
+    ? (parsed as (typeof RANKING_PAGE_SIZE_OPTIONS)[number])
+    : 50;
 }
 
 function metricValue(item: Sp500TopItem, metric: MetricKey) {
@@ -1247,6 +1449,10 @@ function heatmapTileClass(rect: Rect) {
   if (rect.width < 58 || rect.height < 34 || area < 1200) return "tiny";
   if (rect.width < 95 || rect.height < 58 || area < 3200) return "small";
   return "large";
+}
+
+function companyLogoUrl(symbol: string) {
+  return `https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`;
 }
 
 function rectToStyle(rect: Rect, containerWidth: number, containerHeight: number): CSSProperties {

@@ -272,9 +272,22 @@ export default function Home() {
               </div>
               <div className="scoreCopy">
                 <h2>{analysis.label}</h2>
-                <p>
-                  {analysis.symbol} · {analysis.name}
-                </p>
+                <div className="scoreCompany">
+                  <span className="scoreCompanyLogo" aria-hidden="true" key={analysis.symbol}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt=""
+                      loading="lazy"
+                      src={companyLogoUrl(analysis.symbol)}
+                      onError={(event) => {
+                        event.currentTarget.parentElement?.setAttribute("data-hidden", "true");
+                      }}
+                    />
+                  </span>
+                  <p>
+                    {analysis.symbol} · {analysis.name}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -600,6 +613,10 @@ const PEER_STORAGE_KEY = "invest-rate.peer-groups.v1";
 
 function normalizeTicker(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, "").replace(".", "-").slice(0, 16);
+}
+
+function companyLogoUrl(symbol: string) {
+  return `https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`;
 }
 
 function normalizePeerInput(value: string, baseTicker?: string) {
