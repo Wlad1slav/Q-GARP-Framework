@@ -49,7 +49,7 @@ const toneIcons = {
 
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v1";
-const ANALYSIS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
 
 type CachedAnalysisEntry = {

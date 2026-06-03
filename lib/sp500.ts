@@ -13,7 +13,7 @@ export interface Sp500ConstituentResponse {
 }
 
 const SP500_SOURCE_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies";
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const EXCLUDED_SP500_SYMBOLS = new Set(["GOOG"]);
 
 let cachedConstituents: { value: Sp500ConstituentResponse; expiresAt: number } | undefined;

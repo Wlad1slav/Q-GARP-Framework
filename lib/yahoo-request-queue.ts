@@ -6,7 +6,7 @@ type YahooQueueState = {
   queue: PriorityTaskQueue;
 };
 
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 1200;
 const RETRY_DELAYS_MS = [3500, 8000, 15000, 24000];
 const YAHOO_QUEUE_STATE_KEY = "__investRateYahooQueueState";

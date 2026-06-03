@@ -28,7 +28,7 @@ export type CachedAnalysisResponse = {
   cached: boolean;
 };
 
-export const ANALYSIS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+export const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const ANALYSIS_CACHE_TTL_SECONDS = ANALYSIS_CACHE_TTL_MS / 1000;
 
 const ANALYSIS_QUEUE_STATE_KEY = "__investRateAnalysisQueueState";

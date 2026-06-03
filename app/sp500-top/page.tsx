@@ -43,7 +43,7 @@ const supportedLanguages = ["uk", "en"] as const;
 const languageLabels: Record<Language, string> = { uk: "UA", en: "EN" };
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v1";
-const SP500_SCAN_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SP500_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const BATCH_SIZE = 1;
 const TOP_COUNT = 10;
 

@@ -9,7 +9,7 @@ export async function GET() {
     const result = await getSp500Constituents();
     return NextResponse.json(result, {
       headers: {
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "public, max-age=86400",
       },
     });
   } catch (error) {
