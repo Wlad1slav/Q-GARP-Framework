@@ -304,8 +304,9 @@ button:disabled {
 
 .scoreCompany {
   display: flex;
+  flex-direction: column;
   min-width: 0;
-  align-items: center;
+  /* align-items: center; */
   gap: 9px;
   margin-top: 7px;
 }
