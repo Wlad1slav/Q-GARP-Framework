@@ -5,6 +5,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "export:sp500": "node scripts/export-sp500-companies.mjs",
     "lint": "eslint ."
   },
   "dependencies": {
