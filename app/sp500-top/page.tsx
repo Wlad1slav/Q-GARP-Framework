@@ -27,6 +27,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetricTone } from "@/lib/analysis-types";
+import { companyLogoUrl } from "@/lib/company-logo";
 import type { Sp500Constituent } from "@/lib/sp500";
 import type { Sp500IndicatorId, Sp500TopFailure, Sp500TopItem, Sp500TopResponse } from "@/lib/sp500-top-types";
 import { sp500IndicatorIds } from "@/lib/sp500-top-types";
@@ -1449,10 +1450,6 @@ function heatmapTileClass(rect: Rect) {
   if (rect.width < 58 || rect.height < 34 || area < 1200) return "tiny";
   if (rect.width < 95 || rect.height < 58 || area < 3200) return "small";
   return "large";
-}
-
-function companyLogoUrl(symbol: string) {
-  return `https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`;
 }
 
 function rectToStyle(rect: Rect, containerWidth: number, containerHeight: number): CSSProperties {

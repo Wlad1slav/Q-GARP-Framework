@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { AnalysisResult, IndicatorResult, MetricTone } from "@/lib/analysis-types";
+import { companyLogoUrl } from "@/lib/company-logo";
 import {
   defaultLanguage,
   languageLabels,
@@ -613,10 +614,6 @@ const PEER_STORAGE_KEY = "invest-rate.peer-groups.v1";
 
 function normalizeTicker(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, "").replace(".", "-").slice(0, 16);
-}
-
-function companyLogoUrl(symbol: string) {
-  return `https://financialmodelingprep.com/image-stock/${encodeURIComponent(symbol)}.png`;
 }
 
 function normalizePeerInput(value: string, baseTicker?: string) {
