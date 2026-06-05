@@ -1006,10 +1006,25 @@ button:disabled {
   width: 100%;
   min-height: 430px;
   overflow: hidden;
+  overscroll-behavior: contain;
   aspect-ratio: 1000 / 560;
   background: #ffffff;
   border: 1px solid #cfd6df;
   border-radius: 0;
+}
+
+.heatmapCanvas.zoomed {
+  cursor: grab;
+  touch-action: none;
+}
+
+.heatmapCanvas.zoomed.panning {
+  cursor: grabbing;
+}
+
+.heatmapCanvas.zoomed .heatmapSectorButton,
+.heatmapCanvas.zoomed .heatmapTile {
+  cursor: inherit;
 }
 
 .heatmapSector {

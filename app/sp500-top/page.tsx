@@ -24,7 +24,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetricTone } from "@/lib/analysis-types";
 import { companyLogoUrl } from "@/lib/company-logo";
@@ -72,6 +72,20 @@ type Rect = {
   height: number;
 };
 
+type HeatmapView = {
+  x: number;
+  y: number;
+  zoom: number;
+};
+
+type HeatmapDragState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startView: HeatmapView;
+  moved: boolean;
+};
+
 type HeatmapTile = {
   item: HeatmapItem;
   rect: Rect;
@@ -94,6 +108,10 @@ const HEATMAP_WIDTH = 1000;
 const HEATMAP_HEIGHT = 560;
 const HEATMAP_SECTOR_GAP = 2;
 const HEATMAP_TILE_GAP = 1;
+const HEATMAP_MIN_ZOOM = 1;
+const HEATMAP_MAX_ZOOM = 8;
+const HEATMAP_ZOOM_SENSITIVITY = 0.0018;
+const DEFAULT_HEATMAP_VIEW: HeatmapView = { x: 0, y: 0, zoom: HEATMAP_MIN_ZOOM };
 
 const indicatorIcons = {
   double: TrendingUp,
@@ -796,6 +814,136 @@ function Sp500Heatmap({
 }) {
   const t = copy[language].heatmap;
   const focusedLayout = focusedSector ? layout.find((sector) => sector.sector === focusedSector) : undefined;
+  const heatmapViewScope = `${focusedSector ?? "all"}:${items.length ? "data" : "empty"}`;
+  const heatmapCanvasRef = useRef<HTMLDivElement | null>(null);
+  const heatmapDragRef = useRef<HeatmapDragState | null>(null);
+  const suppressHeatmapClickRef = useRef(false);
+  const [isPanningHeatmap, setIsPanningHeatmap] = useState(false);
+  const [heatmapViewState, setHeatmapViewState] = useState<{ scope: string; view: HeatmapView }>(() => ({
+    scope: heatmapViewScope,
+    view: DEFAULT_HEATMAP_VIEW,
+  }));
+  const heatmapView = heatmapViewState.scope === heatmapViewScope ? heatmapViewState.view : DEFAULT_HEATMAP_VIEW;
+  const heatmapViewport = heatmapViewportFromView(heatmapView);
+  const hasHeatmapZoom = heatmapView.zoom > HEATMAP_MIN_ZOOM + 0.001;
+
+  function resetHeatmapView() {
+    setHeatmapViewState({ scope: heatmapViewScope, view: DEFAULT_HEATMAP_VIEW });
+  }
+
+  useEffect(() => {
+    const element = heatmapCanvasRef.current;
+    if (!element) return;
+    const canvasElement = element;
+
+    function handleNativeHeatmapWheel(event: WheelEvent) {
+      if (!event.ctrlKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const rect = canvasElement.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const pointerX = clampNumber((event.clientX - rect.left) / rect.width, 0, 1);
+      const pointerY = clampNumber((event.clientY - rect.top) / rect.height, 0, 1);
+
+      setHeatmapViewState((currentState) => {
+        const currentView = currentState.scope === heatmapViewScope ? currentState.view : DEFAULT_HEATMAP_VIEW;
+        return {
+          scope: heatmapViewScope,
+          view: zoomHeatmapView(currentView, pointerX, pointerY, normalizedWheelDelta(event)),
+        };
+      });
+    }
+
+    canvasElement.addEventListener("wheel", handleNativeHeatmapWheel, { passive: false });
+
+    return () => {
+      canvasElement.removeEventListener("wheel", handleNativeHeatmapWheel);
+    };
+  }, [heatmapViewScope]);
+
+  function handleResetView() {
+    finishHeatmapPan();
+    resetHeatmapView();
+    onResetZoom();
+  }
+
+  function handleFocusSector(sector: string) {
+    finishHeatmapPan();
+    resetHeatmapView();
+    onFocusSector(sector);
+  }
+
+  function handleHeatmapPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!hasHeatmapZoom || event.button !== 0) return;
+
+    heatmapDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startView: heatmapView,
+      moved: false,
+    };
+  }
+
+  function handleHeatmapPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = heatmapDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const deltaX = event.clientX - drag.startClientX;
+    const deltaY = event.clientY - drag.startClientY;
+
+    if (!drag.moved && Math.hypot(deltaX, deltaY) > 3) {
+      drag.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsPanningHeatmap(true);
+    }
+
+    if (!drag.moved) return;
+
+    event.preventDefault();
+    setHeatmapViewState({
+      scope: heatmapViewScope,
+      view: panHeatmapView(drag.startView, deltaX, deltaY, rect.width, rect.height),
+    });
+  }
+
+  function handleHeatmapPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const moved = finishHeatmapPan(event.pointerId, event.currentTarget);
+    if (moved) {
+      suppressHeatmapClickRef.current = true;
+    }
+  }
+
+  function handleHeatmapPointerCancel(event: ReactPointerEvent<HTMLDivElement>) {
+    finishHeatmapPan(event.pointerId, event.currentTarget);
+  }
+
+  function handleHeatmapClickCapture(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!suppressHeatmapClickRef.current) return;
+
+    suppressHeatmapClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function finishHeatmapPan(pointerId?: number, element?: HTMLDivElement) {
+    const drag = heatmapDragRef.current;
+    if (!drag || (typeof pointerId === "number" && drag.pointerId !== pointerId)) return false;
+
+    if (element?.hasPointerCapture(drag.pointerId)) {
+      element.releasePointerCapture(drag.pointerId);
+    }
+
+    heatmapDragRef.current = null;
+    setIsPanningHeatmap(false);
+    return drag.moved;
+  }
 
   return (
     <section className="heatmapSection" aria-label={t.title}>
@@ -810,8 +958,8 @@ function Sp500Heatmap({
         </div>
 
         <div className="heatmapHeaderTools">
-          {focusedSector ? (
-            <button className="heatmapToolButton" type="button" onClick={onResetZoom}>
+          {focusedSector || hasHeatmapZoom ? (
+            <button className="heatmapToolButton" type="button" onClick={handleResetView}>
               <Minimize2 size={16} />
               <span>{t.allSectors}</span>
             </button>
@@ -826,15 +974,23 @@ function Sp500Heatmap({
       </div>
 
       {items.length ? (
-        <div className="heatmapCanvas">
+        <div
+          className={`heatmapCanvas ${hasHeatmapZoom ? "zoomed" : ""} ${isPanningHeatmap ? "panning" : ""}`}
+          ref={heatmapCanvasRef}
+          onClickCapture={handleHeatmapClickCapture}
+          onPointerCancel={handleHeatmapPointerCancel}
+          onPointerDown={handleHeatmapPointerDown}
+          onPointerMove={handleHeatmapPointerMove}
+          onPointerUp={handleHeatmapPointerUp}
+        >
           {layout.map((sector) => (
-            <div className="heatmapSector" key={sector.sector} style={rectToStyle(sector.rect, HEATMAP_WIDTH, HEATMAP_HEIGHT)}>
+            <div className="heatmapSector" key={sector.sector} style={rectToViewportStyle(sector.rect, heatmapViewport)}>
               <button
                 className="heatmapSectorButton"
                 style={{ height: `${(sector.headerHeight / Math.max(sector.rect.height, 1)) * 100}%` }}
                 title={`${sector.sector}: ${formatCompactNumber(sector.marketCapValue, language)}`}
                 type="button"
-                onClick={() => onFocusSector(sector.sector)}
+                onClick={() => handleFocusSector(sector.sector)}
               >
                 <span>{sector.sector}</span>
                 <small>{formatCompactNumber(sector.marketCapValue, language)}</small>
@@ -848,7 +1004,7 @@ function Sp500Heatmap({
 
                 return (
                   <button
-                    className={`heatmapTile ${heatmapTileClass(tile.rect)}`}
+                    className={`heatmapTile ${heatmapTileClass(tile.rect, heatmapView.zoom)}`}
                     key={item.symbol}
                     style={{
                       ...rectToStyle(localRect, sector.rect.width, sector.rect.height),
@@ -1444,12 +1600,79 @@ function heatmapSectorHeaderHeight(rect: Rect, focused: boolean) {
   return Math.min(26, Math.max(17, rect.height * 0.14));
 }
 
-function heatmapTileClass(rect: Rect) {
-  const area = rect.width * rect.height;
-  if (rect.width < 34 || rect.height < 22 || area < 520) return "pin";
-  if (rect.width < 58 || rect.height < 34 || area < 1200) return "tiny";
-  if (rect.width < 95 || rect.height < 58 || area < 3200) return "small";
+function heatmapTileClass(rect: Rect, zoom: number) {
+  const visualWidth = rect.width * zoom;
+  const visualHeight = rect.height * zoom;
+  const area = visualWidth * visualHeight;
+
+  if (visualWidth < 34 || visualHeight < 22 || area < 520) return "pin";
+  if (visualWidth < 58 || visualHeight < 34 || area < 1200) return "tiny";
+  if (visualWidth < 95 || visualHeight < 58 || area < 3200) return "small";
   return "large";
+}
+
+function heatmapViewportFromView(view: HeatmapView): Rect {
+  const safeView = clampHeatmapView(view);
+
+  return {
+    x: safeView.x,
+    y: safeView.y,
+    width: HEATMAP_WIDTH / safeView.zoom,
+    height: HEATMAP_HEIGHT / safeView.zoom,
+  };
+}
+
+function zoomHeatmapView(view: HeatmapView, pointerX: number, pointerY: number, deltaY: number): HeatmapView {
+  const currentView = clampHeatmapView(view);
+  const nextZoom = clampNumber(
+    currentView.zoom * Math.exp(-deltaY * HEATMAP_ZOOM_SENSITIVITY),
+    HEATMAP_MIN_ZOOM,
+    HEATMAP_MAX_ZOOM,
+  );
+
+  if (Math.abs(nextZoom - currentView.zoom) < 0.001) return currentView;
+
+  const currentViewport = heatmapViewportFromView(currentView);
+  const focusX = currentViewport.x + currentViewport.width * pointerX;
+  const focusY = currentViewport.y + currentViewport.height * pointerY;
+  const nextWidth = HEATMAP_WIDTH / nextZoom;
+  const nextHeight = HEATMAP_HEIGHT / nextZoom;
+
+  return clampHeatmapView({
+    x: focusX - nextWidth * pointerX,
+    y: focusY - nextHeight * pointerY,
+    zoom: nextZoom,
+  });
+}
+
+function panHeatmapView(view: HeatmapView, deltaX: number, deltaY: number, elementWidth: number, elementHeight: number): HeatmapView {
+  const currentView = clampHeatmapView(view);
+  if (currentView.zoom <= HEATMAP_MIN_ZOOM + 0.001) return currentView;
+
+  const viewportWidth = HEATMAP_WIDTH / currentView.zoom;
+  const viewportHeight = HEATMAP_HEIGHT / currentView.zoom;
+
+  return clampHeatmapView({
+    ...currentView,
+    x: currentView.x - (deltaX / Math.max(elementWidth, 1)) * viewportWidth,
+    y: currentView.y - (deltaY / Math.max(elementHeight, 1)) * viewportHeight,
+  });
+}
+
+function clampHeatmapView(view: HeatmapView): HeatmapView {
+  const zoom = clampNumber(view.zoom, HEATMAP_MIN_ZOOM, HEATMAP_MAX_ZOOM);
+  const viewportWidth = HEATMAP_WIDTH / zoom;
+  const viewportHeight = HEATMAP_HEIGHT / zoom;
+  const x = zoom <= HEATMAP_MIN_ZOOM + 0.001 ? 0 : clampNumber(view.x, 0, HEATMAP_WIDTH - viewportWidth);
+  const y = zoom <= HEATMAP_MIN_ZOOM + 0.001 ? 0 : clampNumber(view.y, 0, HEATMAP_HEIGHT - viewportHeight);
+
+  return { x, y, zoom };
+}
+
+function normalizedWheelDelta(event: WheelEvent) {
+  if (event.deltaMode === 1) return event.deltaY * 16;
+  if (event.deltaMode === 2) return event.deltaY * HEATMAP_HEIGHT;
+  return event.deltaY;
 }
 
 function rectToStyle(rect: Rect, containerWidth: number, containerHeight: number): CSSProperties {
@@ -1458,6 +1681,15 @@ function rectToStyle(rect: Rect, containerWidth: number, containerHeight: number
     top: `${(rect.y / Math.max(containerHeight, 1)) * 100}%`,
     width: `${(rect.width / Math.max(containerWidth, 1)) * 100}%`,
     height: `${(rect.height / Math.max(containerHeight, 1)) * 100}%`,
+  };
+}
+
+function rectToViewportStyle(rect: Rect, viewport: Rect): CSSProperties {
+  return {
+    left: `${((rect.x - viewport.x) / Math.max(viewport.width, 1)) * 100}%`,
+    top: `${((rect.y - viewport.y) / Math.max(viewport.height, 1)) * 100}%`,
+    width: `${(rect.width / Math.max(viewport.width, 1)) * 100}%`,
+    height: `${(rect.height / Math.max(viewport.height, 1)) * 100}%`,
   };
 }
 
