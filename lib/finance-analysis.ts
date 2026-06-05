@@ -1,4 +1,5 @@
 import YahooFinance from "yahoo-finance2";
+import { getActualPeerSymbols } from "./actual-peers";
 import type { AnalysisResult, EvidenceItem, IndicatorResult, MetricTone, PeerSource } from "./analysis-types";
 import { analysisCopy, defaultLanguage, localeForLanguage, normalizeLanguage, type Language } from "./i18n";
 import type { QueuePriority } from "./priority-task-queue";
@@ -124,7 +125,7 @@ export async function analyzeTicker(
     trailingCashFlow,
     trailingBalanceSheet,
     spySummary,
-    recs,
+    defaultPeerGroup,
   ] =
     await Promise.all([
       getQuoteSummary(symbol, undefined, queuePriority),
@@ -135,12 +136,14 @@ export async function analyzeTicker(
       getFundamentals(symbol, "trailing", "cash-flow", period1, queuePriority),
       getFundamentals(symbol, "trailing", "balance-sheet", period1, queuePriority),
       getQuoteSummary("SPY", ["summaryDetail", "price"], queuePriority),
-      options.skipRecommendedPeers ? Promise.resolve([]) : getRecommendations(symbol, queuePriority),
+      options.skipRecommendedPeers
+        ? Promise.resolve({ symbols: [], source: "recommended" as const })
+        : getDefaultPeerGroup(symbol, queuePriority),
     ]);
 
-  const recommendedPeerSymbols = normalizePeerSymbols(recs.slice(0, 5), symbol);
+  const recommendedPeerSymbols = normalizePeerSymbols(defaultPeerGroup.symbols, symbol);
   const manualPeerSymbols = normalizePeerSymbols(manualPeerInput, symbol);
-  const peerSource: PeerSource = manualPeerSymbols.length ? "manual" : "recommended";
+  const peerSource: PeerSource = manualPeerSymbols.length ? "manual" : defaultPeerGroup.source;
   const peerSymbols = options.skipPeerSnapshots ? [] : peerSource === "manual" ? manualPeerSymbols : recommendedPeerSymbols;
   const peers = options.skipPeerSnapshots ? [] : await getPeerSnapshots(peerSymbols, queuePriority);
   const historicalValuations = options.skipHistoricalValuations
@@ -251,6 +254,24 @@ async function getRecommendations(symbol: string, priority: QueuePriority = "sin
   } catch {
     return [];
   }
+}
+
+async function getDefaultPeerGroup(
+  symbol: string,
+  priority: QueuePriority = "single",
+): Promise<{ symbols: string[]; source: Exclude<PeerSource, "manual"> }> {
+  const actualPeerSymbols = normalizePeerSymbols(await getActualPeerSymbols(symbol), symbol);
+  if (actualPeerSymbols.length) {
+    return {
+      symbols: actualPeerSymbols,
+      source: "actual",
+    };
+  }
+
+  return {
+    symbols: normalizePeerSymbols((await getRecommendations(symbol, priority)).slice(0, 5), symbol),
+    source: "recommended",
+  };
 }
 
 async function getPeerSnapshots(symbols: string[], priority: QueuePriority): Promise<PeerSnapshot[]> {
@@ -1369,7 +1390,7 @@ function riskCopy(language: Language) {
   if (language === "en") {
     return {
       lowConfidence: "low data confidence",
-      recommendedPeers: "Yahoo peer group is not validated",
+      recommendedPeers: "ACTUAL_PEERS group missing; using Yahoo fallback",
       noPeers: "no peer comparison",
       shortHistory: "short financial history",
       missingCashFlow: "cash flow/SBC data missing",
@@ -1388,7 +1409,7 @@ function riskCopy(language: Language) {
 
   return {
     lowConfidence: "низька довіра до даних",
-    recommendedPeers: "Yahoo peer-група не перевірена",
+    recommendedPeers: "ACTUAL_PEERS peer-група відсутня; використовується Yahoo fallback",
     noPeers: "немає peer-порівняння",
     shortHistory: "коротка історія фінзвітності",
     missingCashFlow: "бракує cash flow/SBC",
@@ -1516,9 +1537,7 @@ function buildDataNotes({
 }) {
   const copy = analysisCopy[language].dataNotes;
   const notes: string[] =
-    peerSource === "manual"
-      ? [copy.manualPeers]
-      : [copy.recommendedPeers];
+    peerSource === "manual" ? [copy.manualPeers] : peerSource === "actual" ? [copy.actualPeers] : [copy.recommendedPeers];
   notes.push(scoringNote(scoreSummary, language));
   if (annualFinancials.length < 3) notes.push(copy.shortHistory);
   if (!annualCashFlow.length || !trailingCashFlow.length) notes.push(copy.missingCashFlow);

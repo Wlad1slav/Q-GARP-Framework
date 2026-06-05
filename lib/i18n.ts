@@ -52,14 +52,17 @@ export const uiCopy = {
     peers: {
       label: "Peers",
       manualBadge: "Peer-група",
+      actualBadge: "Рекомендована Peer-група",
       recommendedBadge: "Yahoo peer-група",
       manualText: "Порівняння росту рахується по медіані вибраних конкурентів і збережене локально для цього тікера.",
+      actualText:
+        "Рекомендована peer-група. Її можна замінити вручну для точнішого порівняння.",
       recommendedText:
-        "Рекомендована група Yahoo - лише базове наближення. Для якіснішої оцінки краще вибрати прямих конкурентів вручну.",
-      recommended: "Рекомендовані",
+        "Ми не маємо рекомендованої peer-групи для цього тікера, тому використано fallback з Yahoo. Для якіснішої оцінки краще вибрати конкурентів вручну.",
+      recommended: "Базова група",
       applyTitle: "Застосувати peer-групу",
       promptTitle: "Скопіювати prompt для підбору конкурентів",
-      resetTitle: "Скинути на рекомендовані",
+      resetTitle: "Скинути на базову групу",
     },
     scoreMeta: {
       confidence: "Довіра",
@@ -114,14 +117,17 @@ export const uiCopy = {
     peers: {
       label: "Peers",
       manualBadge: "Peer group",
+      actualBadge: "Recommended peer group",
       recommendedBadge: "Yahoo peer group",
       manualText: "Growth comparison uses the median of your selected competitors and is saved locally for this ticker.",
+      actualText:
+        "Recommended peer group. You can still replace it manually for a sharper comparison.",
       recommendedText:
-        "Yahoo's recommended group is only a starting point. For a sharper read, choose direct competitors manually.",
-      recommended: "Recommended",
+        "We do not have a recommended peer for this ticker, so Yahoo fallback peers are used. For a sharper read, choose competitors manually.",
+      recommended: "Baseline",
       applyTitle: "Apply peer group",
       promptTitle: "Copy prompt for competitor selection",
-      resetTitle: "Reset to recommended",
+      resetTitle: "Reset to baseline",
     },
     scoreMeta: {
       confidence: "Confidence",
@@ -161,8 +167,10 @@ export const analysisCopy = {
     } satisfies Record<MetricTone, string>,
     dataNotes: {
       manualPeers: "Дані: Yahoo Finance; peer-група: вручну обрані конкуренти, медіана по доступних показниках.",
+      actualPeers:
+        "Дані: Yahoo Finance; peer-група: ACTUAL_PEERS CSV, медіана по доступних показниках.",
       recommendedPeers:
-        "Дані: Yahoo Finance; peer-група: базові рекомендації Yahoo. Для якісного порівняння краще обрати конкурентів вручну.",
+        "Дані: Yahoo Finance; в ACTUAL_PEERS немає peer-групи для цього тікера, тому використано Yahoo fallback. Для якісного порівняння краще обрати конкурентів вручну.",
       shortHistory: "Історія фінзвітності коротка, CAGR може бути нестабільним.",
       missingCashFlow: "Cash flow або SBC доступні не для всіх емітентів.",
       missingBalanceSheet: "Balance sheet доступний не повністю, боргові метрики можуть бути неповними.",
@@ -281,8 +289,9 @@ export const analysisCopy = {
     } satisfies Record<MetricTone, string>,
     dataNotes: {
       manualPeers: "Data: Yahoo Finance; peer group: manually selected competitors, median of available metrics.",
+      actualPeers: "Data: Yahoo Finance; peer group: ACTUAL_PEERS CSV, median of available metrics.",
       recommendedPeers:
-        "Data: Yahoo Finance; peer group: Yahoo's baseline recommendations. For a higher-quality comparison, choose competitors manually.",
+        "Data: Yahoo Finance; ACTUAL_PEERS has no peer group for this ticker, so Yahoo fallback peers are used. For a higher-quality comparison, choose competitors manually.",
       shortHistory: "Financial statement history is short, so CAGR may be unstable.",
       missingCashFlow: "Cash flow or SBC is not available for all issuers.",
       missingBalanceSheet: "Balance sheet data is incomplete, so leverage metrics may be partial.",

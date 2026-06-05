@@ -6,7 +6,7 @@ reasonable price profile. The score is a research helper, not a replacement for
 full investment analysis.
 
 The model uses Yahoo Finance data through `yahoo-finance2`: quote summary,
-financial statements, cash flow, balance sheet, peer recommendations, SPY as a
+financial statements, cash flow, balance sheet, peer snapshots, SPY as a
 market benchmark, and historical prices for building historical valuation
 multiples.
 
@@ -306,7 +306,7 @@ Explicit risk flags:
 | Risk flag | Penalty |
 | --- | ---: |
 | Data confidence below 55% | +4 |
-| Yahoo peer group is not manually validated | +2 |
+| ACTUAL_PEERS group is missing and Yahoo fallback is used | +2 |
 | No peer comparison | +5 |
 | Less than 3 years of annual financials | +3 |
 | Missing cash flow/SBC | +4, or +1 for Financials |
@@ -338,7 +338,8 @@ It is important to read more than just `score`:
 - `confidence` - whether the available data is sufficient;
 - `riskPenalty` - how much the score was reduced;
 - `riskFlags` - the reasons for the reduction;
-- peer group - Yahoo's recommended group is only a starting point.
+- peer group - ACTUAL_PEERS is the default source; if a ticker is missing
+  there, Yahoo fallback peers are only a starting point.
 
 ## 7. Methodology Limitations
 

@@ -49,7 +49,7 @@ const toneIcons = {
 } satisfies Record<MetricTone, typeof CheckCircle2>;
 
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
-const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v1";
+const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v2";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
 
@@ -338,11 +338,21 @@ export default function Home() {
 
           <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
             <div className="peerEditorText">
-              <span className={`peerSourceBadge ${analysis.peerSource === "manual" ? "manual" : "recommended"}`}>
+              <span className={`peerSourceBadge ${analysis.peerSource}`}>
                 <UsersRound size={15} />
-                {analysis.peerSource === "manual" ? t.peers.manualBadge : t.peers.recommendedBadge}
+                {analysis.peerSource === "manual"
+                  ? t.peers.manualBadge
+                  : analysis.peerSource === "actual"
+                    ? t.peers.actualBadge
+                    : t.peers.recommendedBadge}
               </span>
-              <p>{analysis.peerSource === "manual" ? t.peers.manualText : t.peers.recommendedText}</p>
+              <p>
+                {analysis.peerSource === "manual"
+                  ? t.peers.manualText
+                  : analysis.peerSource === "actual"
+                    ? t.peers.actualText
+                    : t.peers.recommendedText}
+              </p>
               {analysis.recommendedPeerSymbols.length ? (
                 <small>
                   {t.peers.recommended}: {analysis.recommendedPeerSymbols.join(", ")}
@@ -546,7 +556,7 @@ function buildPeerSelectionPrompt(analysis: AnalysisResult, language: Language) 
     const sector = analysis.sector ? `\nSector: ${analysis.sector}` : "";
     const industry = analysis.industry ? `\nIndustry: ${analysis.industry}` : "";
     const recommended = analysis.recommendedPeerSymbols.length
-      ? `\nCurrent baseline Yahoo group: ${analysis.recommendedPeerSymbols.join(", ")}`
+      ? `\nCurrent baseline peer group: ${analysis.recommendedPeerSymbols.join(", ")}`
       : "";
 
     return `I am analyzing ${analysis.symbol} (${analysis.name}) for a Q-GARP/GARP checklist.${sector}${industry}${recommended}
@@ -569,7 +579,7 @@ Return the answer in this format:
   const sector = analysis.sector ? `\nСектор: ${analysis.sector}` : "";
   const industry = analysis.industry ? `\nІндустрія: ${analysis.industry}` : "";
   const recommended = analysis.recommendedPeerSymbols.length
-    ? `\nПоточна базова Yahoo-група: ${analysis.recommendedPeerSymbols.join(", ")}`
+    ? `\nПоточна базова peer-група: ${analysis.recommendedPeerSymbols.join(", ")}`
     : "";
 
   return `Я аналізую компанію ${analysis.symbol} (${analysis.name}) для Q-GARP/GARP чекліста.${sector}${industry}${recommended}

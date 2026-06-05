@@ -58,10 +58,12 @@ function parseSp500Companies(html) {
 
   return Array.from(table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi))
     .map((row) => Array.from(row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map((cell) => cleanCell(cell[1])))
-    .filter((cells) => cells.length >= 2 && cells[0] !== "Symbol")
+    .filter((cells) => cells.length >= 4 && cells[0] !== "Symbol")
     .map((cells) => ({
       name: cells[1],
       ticket: normalizeTicker(cells[0]),
+      sector: cells[2],
+      subIndustry: cells[3],
     }))
     .filter((company) => company.name && company.ticket);
 }
@@ -110,9 +112,9 @@ async function getYahooPeerSymbols(symbol) {
 
 function toCsv(companies) {
   const rows = companies.map((company) =>
-    [company.name, company.ticket, company.yahooPeers.join("|")].map(csvField).join(","),
+    [company.name, company.ticket, company.sector, company.subIndustry, company.yahooPeers.join("|")].map(csvField).join(","),
   );
-  return ["name,ticket,yahoo_peers", ...rows].join("\n") + "\n";
+  return ["name,ticket,sector,sub_industry,yahoo_peers", ...rows].join("\n") + "\n";
 }
 
 function csvField(value) {

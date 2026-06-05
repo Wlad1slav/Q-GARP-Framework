@@ -1,5 +1,5 @@
 export type MetricTone = "good" | "watch" | "bad" | "unknown";
-export type PeerSource = "recommended" | "manual";
+export type PeerSource = "actual" | "recommended" | "manual";
 
 export interface EvidenceItem {
   label: string;

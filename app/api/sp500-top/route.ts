@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_BATCH_SIZE = 1;
 const CONCURRENCY = 1;
-const CACHE_VERSION = "full-v3";
+const CACHE_VERSION = "full-v4";
 const TICKER_TIMEOUT_MS = 30_000;
 
 const analysisCache = new Map<string, { item: Sp500TopItem; expiresAt: number }>();

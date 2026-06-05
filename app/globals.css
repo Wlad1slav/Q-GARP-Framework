@@ -684,6 +684,11 @@ button:disabled {
   background: var(--green-soft);
 }
 
+.peerSourceBadge.actual {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
 .peerSourceBadge.recommended {
   color: var(--amber);
   background: var(--amber-soft);

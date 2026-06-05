@@ -19,7 +19,7 @@ helper, not investment advice.
   margin quality, and PEG with SBC.
 - S&P 500 top page at `/sp500-top`, with live batch scanning and leaderboards
   for each of the five indicators.
-- Automatic Yahoo peer suggestions plus manually saved peer groups.
+- Automatic ACTUAL_PEERS peer groups with Yahoo fallback plus manually saved peer groups.
 - Ukrainian and English UI copy.
 - Lightweight API routes for ticker analysis, S&P 500 constituents, and batch
   S&P 500 scoring.
@@ -68,9 +68,10 @@ reviewed manually for each company.
 
 The S&P 500 scanner gets its constituent universe from Wikipedia and uses Yahoo
 Finance for financial data. Batch scoring uses the same default methodology as
-the single-ticker checklist, including Yahoo recommended peers. Browser-saved
-manual peer groups from the single-ticker page are local to that page and are
-not applied to the S&P 500 scanner.
+the single-ticker checklist, including ACTUAL_PEERS peer groups with Yahoo
+fallback when a ticker has no ACTUAL_PEERS group. Browser-saved manual peer
+groups from the single-ticker page are local to that page and are not applied
+to the S&P 500 scanner.
 
 ## Forking
 

@@ -12,7 +12,7 @@ export const termDefinitions = {
     eps: "EPS - earnings per share, прибуток на одну акцію. Зростання EPS часто важливіше за сам ріст виручки.",
     yoy: "YoY - year over year, зміна показника проти такого самого періоду минулого року.",
     peers:
-      "Peers - схожі компанії для порівняння. Найкраще обирати прямих конкурентів вручну; Yahoo-рекомендації тут лише стартова група.",
+      "Peers - схожі компанії для порівняння. Дефолтне джерело - ACTUAL_PEERS; якщо групи там немає, Yahoo fallback є лише стартовим наближенням.",
     grossMargin: "Gross margin - валова маржа: частка виручки після собівартості продукту або послуги.",
     operatingMargin:
       "Operating margin - операційна маржа: частка виручки після операційних витрат, але до податків і частини фінансових статей.",
@@ -32,7 +32,7 @@ export const termDefinitions = {
     eps: "EPS - earnings per share. EPS growth is often more important than revenue growth alone.",
     yoy: "YoY - year over year, a metric's change versus the same period in the prior year.",
     peers:
-      "Peers - comparable companies used for benchmarking. Direct competitors are best selected manually; Yahoo recommendations are only a starting group.",
+      "Peers - comparable companies used for benchmarking. The default source is ACTUAL_PEERS; if no group exists there, Yahoo fallback is only a starting group.",
     grossMargin: "Gross margin - the share of revenue left after the cost of goods or services.",
     operatingMargin: "Operating margin - the share of revenue left after operating expenses, before taxes and some financing items.",
     netMargin: "Net margin - the share of revenue that remains as net income.",

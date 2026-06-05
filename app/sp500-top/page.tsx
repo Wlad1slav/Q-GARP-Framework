@@ -46,7 +46,7 @@ type ConstituentsPayload = {
 const supportedLanguages = ["uk", "en"] as const;
 const languageLabels: Record<Language, string> = { uk: "UA", en: "EN" };
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
-const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v1";
+const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v2";
 const SP500_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const BATCH_SIZE = 1;
 const TOP_COUNT = 10;
@@ -136,7 +136,7 @@ const copy = {
     source: "Список",
     overall: "Загальний score",
     peerNote:
-      "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера, з Yahoo recommended peers. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
+      "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера: дефолтні peers підтягуються з ACTUAL_PEERS, а якщо для тікера там немає групи, використовується Yahoo fallback. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
     tableTitle: "Детальний рейтинг",
     rankingSearchPlaceholder: "Пошук за тикером, компанією чи сектором",
     rankingNoMatches: "Нічого не знайдено за цим пошуком.",
@@ -228,7 +228,7 @@ const copy = {
     source: "List",
     overall: "Overall score",
     peerNote:
-      "Top scores use the same default methodology as the ticker checklist, with Yahoo recommended peers. Browser-saved manual peers from the single-ticker page are not applied here.",
+      "Top scores use the same default methodology as the ticker checklist: default peers load from ACTUAL_PEERS, with Yahoo fallback when a ticker has no ACTUAL_PEERS group. Browser-saved manual peers from the single-ticker page are not applied here.",
     tableTitle: "Detailed ranking",
     rankingSearchPlaceholder: "Search ticker, company, or sector",
     rankingNoMatches: "No companies match that search.",
