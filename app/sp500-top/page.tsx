@@ -112,6 +112,8 @@ const HEATMAP_MIN_ZOOM = 1;
 const HEATMAP_MAX_ZOOM = 8;
 const HEATMAP_ZOOM_SENSITIVITY = 0.0018;
 const DEFAULT_HEATMAP_VIEW: HeatmapView = { x: 0, y: 0, zoom: HEATMAP_MIN_ZOOM };
+const HEATMAP_SCORE_COLORS = ["#991F29", "#F23645", "#F77C80", "#FFDB78", "#42BD7F", "#089950", "#056636"] as const;
+const HEATMAP_LEGEND_LABELS = ["0", "", "", "50", "", "", "100"] as const;
 
 const indicatorIcons = {
   double: TrendingUp,
@@ -966,9 +968,15 @@ function Sp500Heatmap({
           ) : null}
 
           <div className="heatmapLegend" aria-label={t.legend}>
-            <span className="heatmapLegendStop low">0</span>
-            <span className="heatmapLegendStop mid">50</span>
-            <span className="heatmapLegendStop high">100</span>
+            {HEATMAP_SCORE_COLORS.map((color, index) => (
+              <span
+                className="heatmapLegendStop"
+                key={color}
+                style={{ backgroundColor: color, color: heatmapTextColor(color) }}
+              >
+                {HEATMAP_LEGEND_LABELS[index]}
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -1000,7 +1008,7 @@ function Sp500Heatmap({
               {sector.tiles.map((tile) => {
                 const item = tile.item;
                 const localRect = relativeRect(tile.rect, sector.rect);
-                const colorStyle = scoreColorStyle(item.score, item.confidence);
+                const colorStyle = scoreColorStyle(item.score);
 
                 return (
                   <button
@@ -1085,7 +1093,7 @@ function HeatmapStatsModal({
         </div>
 
         <div className="heatmapDialogMain">
-          <div className="heatmapDialogScore" style={scoreColorStyle(item.score, item.confidence)}>
+          <div className="heatmapDialogScore" style={scoreColorStyle(item.score)}>
             <strong>{item.score}</strong>
             <span>{t.labels.score}</span>
           </div>
@@ -1713,24 +1721,23 @@ function insetRect(rect: Rect, gap: number): Rect {
   };
 }
 
-function scoreColorStyle(score: number, confidence: number): CSSProperties {
-  if (confidence <= 15) {
-    return {
-      backgroundColor: "#76808b",
-      color: "#ffffff",
-    };
-  }
-
-  const value = clampNumber(score, 0, 100);
-  const backgroundColor =
-    value < 50
-      ? mixHex("#9f1f2d", "#ef767a", value / 50)
-      : mixHex("#c77a1c", "#087344", (value - 50) / 50);
-
+function scoreColorStyle(score: number): CSSProperties {
+  const backgroundColor = heatmapScoreColor(score);
   return {
     backgroundColor,
-    color: relativeLuminance(backgroundColor) > 0.52 ? "#202124" : "#ffffff",
+    color: heatmapTextColor(backgroundColor),
   };
+}
+
+function heatmapScoreColor(score: number) {
+  const value = Number.isFinite(score) ? clampNumber(score, 0, 100) : 0;
+  const bucketIndex = Math.min(HEATMAP_SCORE_COLORS.length - 1, Math.floor((value / 100) * HEATMAP_SCORE_COLORS.length));
+
+  return HEATMAP_SCORE_COLORS[bucketIndex];
+}
+
+function heatmapTextColor(backgroundColor: string) {
+  return relativeLuminance(backgroundColor) > 0.52 ? "#202124" : "#ffffff";
 }
 
 function resolveMarketCapValue(item: Sp500TopItem) {
@@ -1780,15 +1787,6 @@ function formatDateTime(value: string, language: Language) {
 
 function localeForPage(language: Language) {
   return language === "uk" ? "uk-UA" : "en-US";
-}
-
-function mixHex(left: string, right: string, ratio: number) {
-  const leftRgb = hexToRgb(left);
-  const rightRgb = hexToRgb(right);
-  const amount = clampNumber(ratio, 0, 1);
-  const mixed = leftRgb.map((channel, index) => Math.round(channel + (rightRgb[index] - channel) * amount));
-
-  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function hexToRgb(value: string) {

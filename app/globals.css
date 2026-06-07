@@ -979,7 +979,7 @@ button:disabled {
 
 .heatmapLegend {
   display: inline-grid;
-  grid-template-columns: repeat(3, 44px);
+  grid-template-columns: repeat(7, 32px);
   min-height: 34px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -992,18 +992,6 @@ button:disabled {
   color: #fff;
   font-size: 0.72rem;
   font-weight: 820;
-}
-
-.heatmapLegendStop.low {
-  background: #9f1f2d;
-}
-
-.heatmapLegendStop.mid {
-  background: #c77a1c;
-}
-
-.heatmapLegendStop.high {
-  background: #087344;
 }
 
 .heatmapCanvas {
