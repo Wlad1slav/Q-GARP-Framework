@@ -1,3 +1,5 @@
+import { normalizeTicker } from "./ticker";
+
 const ACTUAL_PEERS_CACHE_TTL_MS = 60 * 60 * 1000;
 const ACTUAL_PEERS_ERROR_TTL_MS = 5 * 60 * 1000;
 
@@ -183,10 +185,6 @@ function firstHeaderIndex(headers: string[], names: string[]) {
   }
 
   return -1;
-}
-
-function normalizeTicker(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "").replace(".", "-").slice(0, 16);
 }
 
 function normalizePeerSymbols(values: string[], baseSymbol: string) {

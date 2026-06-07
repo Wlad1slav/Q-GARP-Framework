@@ -32,6 +32,7 @@ import {
   type Language,
 } from "@/lib/i18n";
 import { termDefinitions, termForLabel, type TermKey } from "@/lib/term-definitions";
+import { normalizeTicker } from "@/lib/ticker";
 
 const metricIcons = {
   double: TrendingUp,
@@ -621,10 +622,6 @@ async function copyToClipboard(value: string) {
 }
 
 const PEER_STORAGE_KEY = "invest-rate.peer-groups.v1";
-
-function normalizeTicker(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "").replace(".", "-").slice(0, 16);
-}
 
 function normalizePeerInput(value: string, baseTicker?: string) {
   const baseSymbol = normalizeTicker(baseTicker ?? "");

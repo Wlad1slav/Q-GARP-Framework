@@ -3,6 +3,7 @@ import { getActualPeerSymbols } from "./actual-peers";
 import type { AnalysisResult, EvidenceItem, IndicatorResult, MetricTone, PeerSource } from "./analysis-types";
 import { analysisCopy, defaultLanguage, localeForLanguage, normalizeLanguage, type Language } from "./i18n";
 import type { QueuePriority } from "./priority-task-queue";
+import { normalizeTicker } from "./ticker";
 import { runCachedYahooRequest } from "./yahoo-request-queue";
 
 type AnyRecord = Record<string, unknown>;
@@ -172,10 +173,6 @@ export async function analyzeTicker(
     recommendedPeerSymbols,
     peerSource,
   };
-}
-
-function normalizeTicker(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "").replace(".", "-").slice(0, 16);
 }
 
 function normalizePeerSymbols(values: string[], baseSymbol: string) {

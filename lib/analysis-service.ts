@@ -3,6 +3,7 @@ import { analyzeTicker, type AnalyzeTickerOptions } from "./finance-analysis";
 import type { Language } from "./i18n";
 import { defaultLanguage, normalizeLanguage } from "./i18n";
 import { PriorityTaskQueue, type QueuePriority } from "./priority-task-queue";
+import { normalizeTicker } from "./ticker";
 
 type AnalysisCacheEntry = {
   result: AnalysisResult;
@@ -122,10 +123,6 @@ function cacheKey({
   ].join(":");
 
   return [CACHE_VERSION, symbol, language, peers.join(","), optionBits].join("|");
-}
-
-function normalizeTicker(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "").replace(".", "-").slice(0, 16);
 }
 
 function normalizePeers(values: string[], baseSymbol: string) {
