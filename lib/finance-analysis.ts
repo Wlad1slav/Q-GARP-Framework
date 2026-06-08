@@ -34,6 +34,7 @@ export type AnalyzeTickerOptions = {
   skipRecommendedPeers?: boolean;
   skipPeerSnapshots?: boolean;
   skipHistoricalValuations?: boolean;
+  useSectorWeights?: boolean;
 };
 
 const DOUBLE_CAGR = Math.pow(2, 1 / 5) - 1;
@@ -150,6 +151,7 @@ export async function analyzeTicker(
   const historicalValuations = options.skipHistoricalValuations
     ? []
     : await getHistoricalValuations(symbol, annualFinancials, annualCashFlow, queuePriority);
+  const useSectorWeights = options.useSectorWeights ?? true;
 
   const data = buildAnalysis({
     symbol,
@@ -165,6 +167,7 @@ export async function analyzeTicker(
     peers,
     peerSource,
     language,
+    useSectorWeights,
   });
 
   return {
@@ -383,6 +386,7 @@ function buildAnalysis({
   peers,
   peerSource,
   language,
+  useSectorWeights,
 }: {
   symbol: string;
   quoteSummary: AnyRecord;
@@ -397,6 +401,7 @@ function buildAnalysis({
   peers: PeerSnapshot[];
   peerSource: PeerSource;
   language: Language;
+  useSectorWeights: boolean;
 }): AnalysisResult {
   const price = asRecord(quoteSummary.price);
   const financialData = asRecord(quoteSummary.financialData);
@@ -469,7 +474,13 @@ function buildAnalysis({
   const adjustedFcf = subtractIfBoth(trailingFcf, sbc);
   const sector = stringOrUndefined(assetProfile.sector);
   const industry = stringOrUndefined(assetProfile.industry);
-  const profile = scoringProfileFor(sector, industry);
+  const detectedProfile = scoringProfileFor(sector, industry);
+  const profile = useSectorWeights
+    ? detectedProfile
+    : {
+        ...detectedProfile,
+        weights: DEFAULT_INDICATOR_WEIGHTS,
+      };
 
   const current = {
     revenueGrowth: num(financialData.revenueGrowth),
@@ -569,6 +580,7 @@ function buildAnalysis({
     peerSource,
     scoreSummary,
     language,
+    sectorWeightsEnabled: useSectorWeights,
   });
 
   return {
@@ -587,6 +599,7 @@ function buildAnalysis({
     confidence: scoreSummary.confidence,
     riskPenalty: scoreSummary.riskPenalty,
     scoringProfile: profile.label[language],
+    sectorWeightsEnabled: useSectorWeights,
     riskFlags: scoreSummary.riskFlags,
     tone,
     label,
@@ -1513,6 +1526,7 @@ function buildDataNotes({
   peerSource,
   scoreSummary,
   language,
+  sectorWeightsEnabled,
 }: {
   annualFinancials: StatementRow[];
   annualCashFlow: StatementRow[];
@@ -1531,11 +1545,12 @@ function buildDataNotes({
     scoringProfile: string;
   };
   language: Language;
+  sectorWeightsEnabled: boolean;
 }) {
   const copy = analysisCopy[language].dataNotes;
   const notes: string[] =
     peerSource === "manual" ? [copy.manualPeers] : peerSource === "actual" ? [copy.actualPeers] : [copy.recommendedPeers];
-  notes.push(scoringNote(scoreSummary, language));
+  notes.push(scoringNote(scoreSummary, language, sectorWeightsEnabled));
   if (annualFinancials.length < 3) notes.push(copy.shortHistory);
   if (!annualCashFlow.length || !trailingCashFlow.length) notes.push(copy.missingCashFlow);
   if (!annualBalanceSheet.length || !trailingBalanceSheet.length) notes.push(copy.missingBalanceSheet);
@@ -1550,12 +1565,13 @@ function buildDataNotes({
 function scoringNote(
   scoreSummary: { rawScore: number; confidence: number; riskPenalty: number; scoringProfile: string },
   language: Language,
+  sectorWeightsEnabled: boolean,
 ) {
   if (language === "en") {
-    return `Scoring profile: ${scoreSummary.scoringProfile}; raw score ${scoreSummary.rawScore}/100, data confidence ${scoreSummary.confidence}/100, risk/data penalty -${scoreSummary.riskPenalty}.`;
+    return `Scoring profile: ${scoreSummary.scoringProfile}; sector weights ${sectorWeightsEnabled ? "on" : "off"}; raw score ${scoreSummary.rawScore}/100, data confidence ${scoreSummary.confidence}/100, risk/data penalty -${scoreSummary.riskPenalty}.`;
   }
 
-  return `Профіль скорингу: ${scoreSummary.scoringProfile}; raw score ${scoreSummary.rawScore}/100, довіра до даних ${scoreSummary.confidence}/100, штраф за ризики/дані -${scoreSummary.riskPenalty}.`;
+  return `Профіль скорингу: ${scoreSummary.scoringProfile}; галузеві ваги ${sectorWeightsEnabled ? "увімкнено" : "вимкнено"}; raw score ${scoreSummary.rawScore}/100, довіра до даних ${scoreSummary.confidence}/100, штраф за ризики/дані -${scoreSummary.riskPenalty}.`;
 }
 
 function riskFlagsNote(flags: string[], language: Language) {

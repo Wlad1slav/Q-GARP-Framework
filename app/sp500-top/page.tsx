@@ -18,6 +18,7 @@ import {
   Play,
   RefreshCw,
   Search,
+  Settings,
   ShieldCheck,
   TrendingUp,
   X,
@@ -26,6 +27,13 @@ import {
 import Link from "next/link";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  readAnalysisSettings,
+  sectorWeightsSearchParam,
+  SECTOR_WEIGHTS_QUERY_PARAM,
+  SP500_TOP_SETTINGS_STORAGE_KEY,
+  writeAnalysisSettings,
+} from "@/lib/analysis-settings";
 import type { MetricTone } from "@/lib/analysis-types";
 import { companyLogoUrl } from "@/lib/company-logo";
 import type { Sp500Constituent } from "@/lib/sp500";
@@ -46,8 +54,10 @@ type ConstituentsPayload = {
 const supportedLanguages = ["uk", "en"] as const;
 const languageLabels: Record<Language, string> = { uk: "UA", en: "EN" };
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
-const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v2";
+const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v4";
 const SP500_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const METHODOLOGY_SCORING_PROFILES_URL =
+  "https://github.com/Wlad1slav/Q-GARP-Framework/blob/main/METHODOLOGY.md#3-scoring-profiles";
 const BATCH_SIZE = 1;
 const TOP_COUNT = 10;
 const RANKING_PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -56,9 +66,15 @@ const RANKING_ALL_PAGE_SIZE = "all";
 type RankingPageSize = (typeof RANKING_PAGE_SIZE_OPTIONS)[number] | typeof RANKING_ALL_PAGE_SIZE;
 
 type StoredSp500Scan = {
-  items: Sp500TopItem[];
   expiresAt: number;
+  modes: Partial<Record<Sp500ScanMode, StoredSp500ScanMode>>;
 };
+
+type StoredSp500ScanMode = {
+  items: Sp500TopItem[];
+};
+
+type Sp500ScanMode = "sectorWeights" | "baselineWeights";
 
 type HeatmapItem = Sp500TopItem & {
   marketCapValueResolved: number;
@@ -184,6 +200,12 @@ const copy = {
     scanning: "Сканую",
     stopped: "Пауза",
     progress: "Прогрес",
+    settings: {
+      title: "Налаштування sp500-top",
+      sectorWeights: "Увімкнути ваги залежно від галузі",
+      methodologyTitle: "Методологія scoring profiles",
+      disabledTitle: "Зупини скан, щоб змінити налаштування",
+    },
     actions: {
       start: "Сканувати",
       resume: "Продовжити",
@@ -276,6 +298,12 @@ const copy = {
     scanning: "Scanning",
     stopped: "Paused",
     progress: "Progress",
+    settings: {
+      title: "sp500-top settings",
+      sectorWeights: "Enable industry-based weights",
+      methodologyTitle: "Scoring profiles methodology",
+      disabledTitle: "Pause the scan to change settings",
+    },
     actions: {
       start: "Scan",
       resume: "Resume",
@@ -320,6 +348,9 @@ const copy = {
 export default function Sp500TopPage() {
   const [language, setLanguage] = useState<Language>(() =>
     typeof window === "undefined" ? "uk" : normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)),
+  );
+  const [useSectorWeights, setUseSectorWeights] = useState(
+    () => readAnalysisSettings(SP500_TOP_SETTINGS_STORAGE_KEY).useSectorWeights,
   );
   const [constituents, setConstituents] = useState<Sp500Constituent[]>([]);
   const [source, setSource] = useState<{ name: string; url: string; asOf: string } | null>(null);
@@ -392,6 +423,10 @@ export default function Sp500TopPage() {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
+  useEffect(() => {
+    writeAnalysisSettings(SP500_TOP_SETTINGS_STORAGE_KEY, { useSectorWeights });
+  }, [useSectorWeights]);
+
   const constituentBySymbol = useMemo(
     () => new Map(constituents.map((constituent) => [constituent.symbol, constituent])),
     [constituents],
@@ -402,7 +437,7 @@ export default function Sp500TopPage() {
     didRestoreScanRef.current = true;
 
     const timer = window.setTimeout(() => {
-      const restoredItems = readSp500ScanCache(constituents);
+      const restoredItems = readSp500ScanCache(constituents, useSectorWeights);
       if (!restoredItems.length) return;
 
       itemMapRef.current = new Map(restoredItems.map((item) => [item.symbol, item]));
@@ -414,7 +449,7 @@ export default function Sp500TopPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [constituents]);
+  }, [constituents, useSectorWeights]);
 
   const topByIndicator = useMemo(() => {
     return Object.fromEntries(
@@ -458,6 +493,42 @@ export default function Sp500TopPage() {
     setLanguage(nextLanguage);
   }
 
+  function clearScanState(options: { removeCache?: boolean } = {}) {
+    itemMapRef.current = new Map();
+    failedRef.current = [];
+    processedRef.current = new Set();
+    if (options.removeCache) {
+      removeSp500ScanCache();
+    }
+    setItems([]);
+    setFailed([]);
+    setProcessedCount(0);
+    setCurrentBatch("");
+    setFocusedHeatmapSector(null);
+    setSelectedHeatmapItem(null);
+  }
+
+  function changeUseSectorWeights(nextUseSectorWeights: boolean) {
+    if (nextUseSectorWeights === useSectorWeights || scanning) return;
+
+    setUseSectorWeights(nextUseSectorWeights);
+    restoreScanState(nextUseSectorWeights);
+  }
+
+  function restoreScanState(nextUseSectorWeights: boolean) {
+    const restoredItems = readSp500ScanCache(constituents, nextUseSectorWeights);
+
+    itemMapRef.current = new Map(restoredItems.map((item) => [item.symbol, item]));
+    failedRef.current = [];
+    processedRef.current = new Set(restoredItems.map((item) => item.symbol));
+    setItems(restoredItems);
+    setFailed([]);
+    setProcessedCount(restoredItems.length);
+    setCurrentBatch("");
+    setFocusedHeatmapSector(null);
+    setSelectedHeatmapItem(null);
+  }
+
   function stopScan() {
     shouldStopRef.current = true;
     setStopping(true);
@@ -468,13 +539,7 @@ export default function Sp500TopPage() {
     if (!constituents.length || scanning) return;
 
     if (reset) {
-      itemMapRef.current = new Map();
-      failedRef.current = [];
-      processedRef.current = new Set();
-      removeSp500ScanCache();
-      setItems([]);
-      setFailed([]);
-      setProcessedCount(0);
+      clearScanState({ removeCache: true });
     }
 
     shouldStopRef.current = false;
@@ -493,16 +558,15 @@ export default function Sp500TopPage() {
       abortRef.current = controller;
 
       try {
-        const response = await fetch(`/api/sp500-top?tickers=${batch.map(encodeURIComponent).join(",")}`, {
-          signal: controller.signal,
-        });
-        const payload = await readJsonPayload<Sp500TopResponse & { message?: string }>(response, t.errors.scan);
-
-        if (!response.ok) {
-          throw new Error(payload.message ?? t.errors.scan);
-        }
-
+        const payload = await fetchSp500TopBatch(batch, useSectorWeights, controller.signal);
         mergeBatch(payload, constituentBySymbol);
+
+        try {
+          const comparisonPayload = await fetchSp500TopBatch(batch, !useSectorWeights, controller.signal);
+          mergeCachedModeBatch(comparisonPayload, constituentBySymbol, !useSectorWeights);
+        } catch (caught) {
+          if (isAbortError(caught)) break;
+        }
       } catch (caught) {
         if (isAbortError(caught)) break;
 
@@ -516,6 +580,23 @@ export default function Sp500TopPage() {
     setCurrentBatch("");
     setScanning(false);
     setStopping(false);
+  }
+
+  async function fetchSp500TopBatch(batch: string[], batchUseSectorWeights: boolean, signal: AbortSignal) {
+    const params = new URLSearchParams({
+      tickers: batch.join(","),
+      [SECTOR_WEIGHTS_QUERY_PARAM]: sectorWeightsSearchParam(batchUseSectorWeights),
+    });
+    const response = await fetch(`/api/sp500-top?${params.toString()}`, {
+      signal,
+    });
+    const payload = await readJsonPayload<Sp500TopResponse & { message?: string }>(response, t.errors.scan);
+
+    if (!response.ok) {
+      throw new Error(payload.message ?? t.errors.scan);
+    }
+
+    return payload;
   }
 
   function mergeBatch(payload: Sp500TopResponse, meta: Map<string, Sp500Constituent>) {
@@ -545,30 +626,70 @@ export default function Sp500TopPage() {
     setItems(nextItems);
     setFailed(failedRef.current);
     setProcessedCount(processedRef.current.size);
-    writeSp500ScanCache(nextItems);
+    writeSp500ScanCache(nextItems, useSectorWeights);
+  }
+
+  function mergeCachedModeBatch(payload: Sp500TopResponse, meta: Map<string, Sp500Constituent>, modeUseSectorWeights: boolean) {
+    const cachedItems = readSp500ScanCache(constituents, modeUseSectorWeights);
+    const itemBySymbol = new Map(cachedItems.map((item) => [item.symbol, item]));
+
+    for (const item of payload.items) {
+      const constituent = meta.get(item.symbol);
+      itemBySymbol.set(item.symbol, {
+        ...item,
+        name: item.name || constituent?.name || item.symbol,
+        sector: item.sector ?? constituent?.sector,
+        industry: item.industry ?? constituent?.industry,
+      });
+    }
+
+    writeSp500ScanCache(Array.from(itemBySymbol.values()), modeUseSectorWeights);
   }
 
   if (loadingConstituents) {
     return (
-      <main className="appShell sp500Shell">
-        <Sp500Header language={language} onLanguageChange={changeLanguage} />
-        <StatePanel icon={<Loader2 size={34} />} title={t.loadingList} text={t.loadingListText} type="loading" />
-      </main>
+      <>
+        <Sp500SettingsModule
+          disabled={false}
+          language={language}
+          useSectorWeights={useSectorWeights}
+          onUseSectorWeightsChange={changeUseSectorWeights}
+        />
+        <main className="appShell sp500Shell withSettings">
+          <Sp500Header language={language} onLanguageChange={changeLanguage} />
+          <StatePanel icon={<Loader2 size={34} />} title={t.loadingList} text={t.loadingListText} type="loading" />
+        </main>
+      </>
     );
   }
 
   if (error && !constituents.length) {
     return (
-      <main className="appShell sp500Shell">
-        <Sp500Header language={language} onLanguageChange={changeLanguage} />
-        <StatePanel icon={<AlertTriangle size={34} />} title={t.failedListTitle} text={error} type="error" />
-      </main>
+      <>
+        <Sp500SettingsModule
+          disabled={false}
+          language={language}
+          useSectorWeights={useSectorWeights}
+          onUseSectorWeightsChange={changeUseSectorWeights}
+        />
+        <main className="appShell sp500Shell withSettings">
+          <Sp500Header language={language} onLanguageChange={changeLanguage} />
+          <StatePanel icon={<AlertTriangle size={34} />} title={t.failedListTitle} text={error} type="error" />
+        </main>
+      </>
     );
   }
 
   return (
-    <main className="appShell sp500Shell">
-      <Sp500Header language={language} onLanguageChange={changeLanguage} />
+    <>
+      <Sp500SettingsModule
+        disabled={scanning}
+        language={language}
+        useSectorWeights={useSectorWeights}
+        onUseSectorWeightsChange={changeUseSectorWeights}
+      />
+      <main className="appShell sp500Shell withSettings">
+        <Sp500Header language={language} onLanguageChange={changeLanguage} />
 
       <section className="sp500ScanBand" aria-label={t.progress}>
         <div className="scanMain">
@@ -740,7 +861,68 @@ export default function Sp500TopPage() {
       {activeSelectedHeatmapItem ? (
         <HeatmapStatsModal item={activeSelectedHeatmapItem} language={language} onClose={() => setSelectedHeatmapItem(null)} />
       ) : null}
-    </main>
+      </main>
+    </>
+  );
+}
+
+function Sp500SettingsModule({
+  disabled,
+  language,
+  useSectorWeights,
+  onUseSectorWeightsChange,
+}: {
+  disabled: boolean;
+  language: Language;
+  useSectorWeights: boolean;
+  onUseSectorWeightsChange: (enabled: boolean) => void;
+}) {
+  const t = copy[language].settings;
+  const [open, setOpen] = useState(false);
+  const menuId = "sp500-settings-menu";
+
+  return (
+    <aside className="settingsModule" aria-label={t.title}>
+      <button
+        className="settingsMenuButton"
+        type="button"
+        aria-controls={menuId}
+        aria-expanded={open}
+        aria-label={t.title}
+        title={t.title}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Settings size={16} />
+      </button>
+      <div className="settingsDropdown" hidden={!open} id={menuId}>
+        <div className="settingsModuleHeader">
+          <Settings size={16} />
+          <strong>{t.title}</strong>
+        </div>
+        <div className="settingsOption">
+          <label className={`settingsToggleLabel ${disabled ? "disabled" : ""}`} title={disabled ? t.disabledTitle : undefined}>
+            <input
+              checked={useSectorWeights}
+              disabled={disabled}
+              type="checkbox"
+              onChange={(event) => onUseSectorWeightsChange(event.currentTarget.checked)}
+            />
+            <span className="settingsSwitch" aria-hidden="true" />
+            <span>{t.sectorWeights}</span>
+          </label>
+          <a
+            className="settingsHelpLink"
+            href={METHODOLOGY_SCORING_PROFILES_URL}
+            target="_blank"
+            rel="noreferrer"
+            title={t.methodologyTitle}
+          >
+            <span>METHODOLOGY.md</span>
+            <ExternalLink size={12} />
+          </a>
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -1837,19 +2019,24 @@ function formatResponseError(response: Response, fallbackMessage: string) {
   return response.ok ? fallbackMessage : `${fallbackMessage} HTTP ${response.status}.`;
 }
 
-function readSp500ScanCache(constituents: Sp500Constituent[]) {
+function readSp500ScanCache(constituents: Sp500Constituent[], useSectorWeights: boolean) {
   if (typeof window === "undefined") return [];
 
   try {
     const raw = window.localStorage.getItem(SP500_SCAN_CACHE_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as StoredSp500Scan) : undefined;
-    if (!parsed || parsed.expiresAt <= Date.now() || !Array.isArray(parsed.items)) {
+    if (!parsed || parsed.expiresAt <= Date.now() || !parsed.modes || typeof parsed.modes !== "object") {
       window.localStorage.removeItem(SP500_SCAN_CACHE_STORAGE_KEY);
       return [];
     }
 
+    const mode = parsed.modes[sp500ScanMode(useSectorWeights)];
+    if (!Array.isArray(mode?.items)) {
+      return [];
+    }
+
     const metaBySymbol = new Map(constituents.map((constituent) => [constituent.symbol, constituent]));
-    const restored = parsed.items
+    const restored = mode.items
       .filter((item) => metaBySymbol.has(item.symbol))
       .map((item) => {
         const meta = metaBySymbol.get(item.symbol);
@@ -1867,13 +2054,19 @@ function readSp500ScanCache(constituents: Sp500Constituent[]) {
   }
 }
 
-function writeSp500ScanCache(items: Sp500TopItem[]) {
+function writeSp500ScanCache(items: Sp500TopItem[], useSectorWeights: boolean) {
   if (typeof window === "undefined") return;
 
   const uniqueItems = Array.from(new Map(items.map((item) => [item.symbol, item])).values());
+  const current = readStoredSp500Scan();
   const payload: StoredSp500Scan = {
-    items: uniqueItems,
-    expiresAt: Date.now() + SP500_SCAN_CACHE_TTL_MS,
+    expiresAt: Math.max(current?.expiresAt ?? 0, Date.now() + SP500_SCAN_CACHE_TTL_MS),
+    modes: {
+      ...(current?.modes ?? {}),
+      [sp500ScanMode(useSectorWeights)]: {
+        items: uniqueItems,
+      },
+    },
   };
 
   window.localStorage.setItem(SP500_SCAN_CACHE_STORAGE_KEY, JSON.stringify(payload));
@@ -1882,4 +2075,24 @@ function writeSp500ScanCache(items: Sp500TopItem[]) {
 function removeSp500ScanCache() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(SP500_SCAN_CACHE_STORAGE_KEY);
+}
+
+function readStoredSp500Scan(): StoredSp500Scan | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  try {
+    const raw = window.localStorage.getItem(SP500_SCAN_CACHE_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as StoredSp500Scan) : undefined;
+    if (!parsed || parsed.expiresAt <= Date.now() || !parsed.modes || typeof parsed.modes !== "object") {
+      return undefined;
+    }
+
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function sp500ScanMode(useSectorWeights: boolean): Sp500ScanMode {
+  return useSectorWeights ? "sectorWeights" : "baselineWeights";
 }

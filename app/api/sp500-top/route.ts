@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ANALYSIS_CACHE_TTL_MS, ANALYSIS_CACHE_TTL_SECONDS, getCachedAnalysis } from "@/lib/analysis-service";
+import { parseSectorWeightsFlag, sectorWeightsCacheToken, SECTOR_WEIGHTS_QUERY_PARAM } from "@/lib/analysis-settings";
 import type { AnalysisResult } from "@/lib/analysis-types";
 import type { Sp500IndicatorId, Sp500TopItem } from "@/lib/sp500-top-types";
 import { sp500IndicatorIds, type Sp500TopFailure, type Sp500TopResponse } from "@/lib/sp500-top-types";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_BATCH_SIZE = 1;
 const CONCURRENCY = 1;
-const CACHE_VERSION = "full-v4";
+const CACHE_VERSION = "full-v5";
 const TICKER_TIMEOUT_MS = 30_000;
 
 const analysisCache = new Map<string, { item: Sp500TopItem; expiresAt: number }>();
@@ -18,12 +19,13 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
   const { searchParams } = new URL(request.url);
   const symbols = parseTickerList(searchParams.get("tickers")).slice(0, MAX_BATCH_SIZE);
+  const useSectorWeights = parseSectorWeightsFlag(searchParams.get(SECTOR_WEIGHTS_QUERY_PARAM));
 
   if (!symbols.length) {
     return NextResponse.json({ message: "Provide at least one ticker in the tickers query parameter." }, { status: 400 });
   }
 
-  const outcomes = await mapWithConcurrency(symbols, CONCURRENCY, getTopItemWithTimeout);
+  const outcomes = await mapWithConcurrency(symbols, CONCURRENCY, (symbol) => getTopItemWithTimeout(symbol, useSectorWeights));
   const items: Sp500TopItem[] = [];
   const failed: Sp500TopFailure[] = [];
   let cached = 0;
@@ -71,8 +73,8 @@ function parseTickerList(value: string | null) {
   );
 }
 
-async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached: boolean }> {
-  const cacheKey = `${CACHE_VERSION}:${symbol}`;
+async function getTopItem(symbol: string, useSectorWeights: boolean): Promise<{ item: Sp500TopItem; cached: boolean }> {
+  const cacheKey = `${CACHE_VERSION}:${sectorWeightsCacheToken(useSectorWeights)}:${symbol}`;
   const now = Date.now();
   const cached = analysisCache.get(cacheKey);
 
@@ -85,6 +87,9 @@ async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached:
     peers: [],
     language: "en",
     priority: "sp500",
+    options: {
+      useSectorWeights,
+    },
   });
   const item = toTopItem(analysis);
 
@@ -96,8 +101,8 @@ async function getTopItem(symbol: string): Promise<{ item: Sp500TopItem; cached:
   return { item, cached: analysisCached };
 }
 
-async function getTopItemWithTimeout(symbol: string): Promise<{ item: Sp500TopItem; cached: boolean }> {
-  return withTimeout(getTopItem(symbol), TICKER_TIMEOUT_MS, `${symbol} exceeded the server time budget.`);
+async function getTopItemWithTimeout(symbol: string, useSectorWeights: boolean): Promise<{ item: Sp500TopItem; cached: boolean }> {
+  return withTimeout(getTopItem(symbol, useSectorWeights), TICKER_TIMEOUT_MS, `${symbol} exceeded the server time budget.`);
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

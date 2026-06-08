@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ANALYSIS_CACHE_TTL_SECONDS, getCachedAnalysis } from "@/lib/analysis-service";
+import { parseSectorWeightsFlag, SECTOR_WEIGHTS_QUERY_PARAM } from "@/lib/analysis-settings";
 import { analysisCopy, normalizeLanguage } from "@/lib/i18n";
 
 export const runtime = "nodejs";
@@ -10,6 +11,7 @@ export async function GET(request: Request) {
   const ticker = searchParams.get("ticker") ?? "";
   const peers = parsePeers(searchParams.get("peers"));
   const language = normalizeLanguage(searchParams.get("lang"));
+  const useSectorWeights = parseSectorWeightsFlag(searchParams.get(SECTOR_WEIGHTS_QUERY_PARAM));
 
   try {
     const { result, cached } = await getCachedAnalysis({
@@ -17,6 +19,9 @@ export async function GET(request: Request) {
       peers,
       language,
       priority: "single",
+      options: {
+        useSectorWeights,
+      },
     });
 
     return NextResponse.json(result, {

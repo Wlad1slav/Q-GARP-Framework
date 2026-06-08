@@ -34,6 +34,7 @@ export interface AnalysisResult {
   confidence: number;
   riskPenalty: number;
   scoringProfile: string;
+  sectorWeightsEnabled: boolean;
   riskFlags: string[];
   tone: MetricTone;
   label: string;

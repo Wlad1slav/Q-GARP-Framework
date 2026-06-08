@@ -1,4 +1,5 @@
 import type { AnalysisResult } from "./analysis-types";
+import { sectorWeightsCacheToken } from "./analysis-settings";
 import { analyzeTicker, type AnalyzeTickerOptions } from "./finance-analysis";
 import type { Language } from "./i18n";
 import { defaultLanguage, normalizeLanguage } from "./i18n";
@@ -120,6 +121,7 @@ function cacheKey({
     options.skipRecommendedPeers ? "no-recs" : "recs",
     options.skipPeerSnapshots ? "no-peers" : "peers",
     options.skipHistoricalValuations ? "no-history" : "history",
+    sectorWeightsCacheToken(options.useSectorWeights ?? true),
   ].join(":");
 
   return [CACHE_VERSION, symbol, language, peers.join(","), optionBits].join("|");

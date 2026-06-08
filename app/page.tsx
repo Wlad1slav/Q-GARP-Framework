@@ -9,10 +9,12 @@ import {
   CircleAlert,
   ClipboardCopy,
   Loader2,
+  ExternalLink,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
+  Settings,
   ShieldCheck,
   TrendingUp,
   UsersRound,
@@ -20,6 +22,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  APP_SETTINGS_STORAGE_KEY,
+  readAnalysisSettings,
+  sectorWeightsSearchParam,
+  SECTOR_WEIGHTS_QUERY_PARAM,
+  writeAnalysisSettings,
+} from "@/lib/analysis-settings";
 import type { AnalysisResult, IndicatorResult, MetricTone } from "@/lib/analysis-types";
 import { companyLogoUrl } from "@/lib/company-logo";
 import {
@@ -53,6 +62,21 @@ const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v2";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
+const METHODOLOGY_SCORING_PROFILES_URL =
+  "https://github.com/Wlad1slav/Q-GARP-Framework/blob/main/METHODOLOGY.md#3-scoring-profiles";
+
+const settingsPanelCopy = {
+  uk: {
+    title: "Налаштування",
+    sectorWeights: "Увімкнути ваги залежно від галузі",
+    methodologyTitle: "Методологія scoring profiles",
+  },
+  en: {
+    title: "Settings",
+    sectorWeights: "Enable industry-based weights",
+    methodologyTitle: "Scoring profiles methodology",
+  },
+} satisfies Record<Language, { title: string; sectorWeights: string; methodologyTitle: string }>;
 
 type CachedAnalysisEntry = {
   result: AnalysisResult;
@@ -68,6 +92,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [peerInput, setPeerInput] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
+  const [useSectorWeights, setUseSectorWeights] = useState(() => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights);
   const didReadInitialUrl = useRef(false);
   const t = uiCopy[language];
 
@@ -79,13 +104,22 @@ export default function Home() {
     : "";
 
   const loadAnalysis = useCallback(
-    async (nextTicker: string, peerOverride?: string[] | null, requestLanguage = language) => {
+    async (
+      nextTicker: string,
+      peerOverride?: string[] | null,
+      requestLanguage = language,
+      requestUseSectorWeights = useSectorWeights,
+    ) => {
       const cleanTicker = nextTicker.trim();
       if (!cleanTicker) return;
       const requestCopy = uiCopy[requestLanguage];
       const peers = peerOverride === undefined ? readSavedPeerGroup(cleanTicker) : (peerOverride ?? []);
-      const params = new URLSearchParams({ ticker: cleanTicker, lang: requestLanguage });
-      const cacheKey = analysisCacheKey(cleanTicker, peers, requestLanguage);
+      const params = new URLSearchParams({
+        ticker: cleanTicker,
+        lang: requestLanguage,
+        [SECTOR_WEIGHTS_QUERY_PARAM]: sectorWeightsSearchParam(requestUseSectorWeights),
+      });
+      const cacheKey = analysisCacheKey(cleanTicker, peers, requestLanguage, requestUseSectorWeights);
       const cachedAnalysis = readCachedAnalysis(cacheKey);
 
       if (cachedAnalysis) {
@@ -122,7 +156,7 @@ export default function Home() {
         setLoading(false);
       }
     },
-    [language],
+    [language, useSectorWeights],
   );
 
   useEffect(() => {
@@ -140,16 +174,20 @@ export default function Home() {
     const cleanTicker = initialTicker.toUpperCase();
     const timer = window.setTimeout(() => {
       setTicker(cleanTicker);
-      void loadAnalysis(cleanTicker, undefined, initialLanguage);
+      void loadAnalysis(cleanTicker, undefined, initialLanguage, useSectorWeights);
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loadAnalysis]);
+  }, [loadAnalysis, useSectorWeights]);
 
   useEffect(() => {
     document.documentElement.lang = language;
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  useEffect(() => {
+    writeAnalysisSettings(APP_SETTINGS_STORAGE_KEY, { useSectorWeights });
+  }, [useSectorWeights]);
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -167,6 +205,16 @@ export default function Home() {
     }
 
     setError("");
+  }
+
+  function changeUseSectorWeights(nextUseSectorWeights: boolean) {
+    if (nextUseSectorWeights === useSectorWeights) return;
+
+    setUseSectorWeights(nextUseSectorWeights);
+    const targetTicker = analysis?.symbol ?? lastTicker;
+    if (targetTicker) {
+      void loadAnalysis(targetTicker, undefined, language, nextUseSectorWeights);
+    }
   }
 
   function applyPeerGroup() {
@@ -196,7 +244,14 @@ export default function Home() {
   }
 
   return (
-    <main className="appShell">
+    <>
+      <SettingsModule
+        language={language}
+        useSectorWeights={useSectorWeights}
+        onUseSectorWeightsChange={changeUseSectorWeights}
+      />
+
+      <main className="appShell withSettings">
       <header className="topBar">
         <div className="brand">
           <div className="brandMark" aria-hidden="true">
@@ -423,7 +478,65 @@ export default function Home() {
       ) : (
         <StatePanel icon={<Search size={34} />} title={t.states.emptyTitle} text={t.states.emptyText} type="empty" />
       )}
-    </main>
+      </main>
+    </>
+  );
+}
+
+function SettingsModule({
+  language,
+  useSectorWeights,
+  onUseSectorWeightsChange,
+}: {
+  language: Language;
+  useSectorWeights: boolean;
+  onUseSectorWeightsChange: (enabled: boolean) => void;
+}) {
+  const t = settingsPanelCopy[language];
+  const [open, setOpen] = useState(false);
+  const menuId = "app-settings-menu";
+
+  return (
+    <aside className="settingsModule" aria-label={t.title}>
+      <button
+        className="settingsMenuButton"
+        type="button"
+        aria-controls={menuId}
+        aria-expanded={open}
+        aria-label={t.title}
+        title={t.title}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Settings size={16} />
+      </button>
+      <div className="settingsDropdown" hidden={!open} id={menuId}>
+        <div className="settingsModuleHeader">
+          <Settings size={16} />
+          <strong>{t.title}</strong>
+        </div>
+        <div className="settingsOption">
+          <label className="settingsToggleLabel">
+            <input
+              checked={useSectorWeights}
+              type="checkbox"
+              onChange={(event) => onUseSectorWeightsChange(event.currentTarget.checked)}
+            />
+            <span className="settingsSwitch" aria-hidden="true" />
+            <span>{t.sectorWeights}</span>
+          </label>
+          <a
+            className="settingsHelpLink"
+            href={METHODOLOGY_SCORING_PROFILES_URL}
+            target="_blank"
+            rel="noreferrer"
+            title={t.methodologyTitle}
+          >
+            <span>METHODOLOGY.md</span>
+            <ExternalLink size={12} />
+          </a>
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -678,10 +791,10 @@ function removeSavedPeerGroup(ticker: string) {
   window.localStorage.setItem(PEER_STORAGE_KEY, JSON.stringify(groups));
 }
 
-function analysisCacheKey(ticker: string, peers: string[], language: Language) {
+function analysisCacheKey(ticker: string, peers: string[], language: Language, useSectorWeights: boolean) {
   const symbol = normalizeTicker(ticker);
   const peerKey = normalizePeerInput(peers.join(","), symbol).join(",");
-  return `${language}|${symbol}|${peerKey}`;
+  return `${language}|${symbol}|${peerKey}|${useSectorWeights ? "sector-weights" : "baseline-weights"}`;
 }
 
 function readCachedAnalysis(key: string): AnalysisResult | null {
