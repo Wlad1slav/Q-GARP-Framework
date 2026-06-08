@@ -1,9 +1,22 @@
+import type { SupplementalMetricId } from "./analysis-types";
+
+export type SupplementalMetricSettings = Record<SupplementalMetricId, boolean>;
+
 export type AnalysisSettings = {
   useSectorWeights: boolean;
+  supplementalMetrics: SupplementalMetricSettings;
+};
+
+export const DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS: SupplementalMetricSettings = {
+  totalShareholderYield: false,
+  fcfYield: false,
+  impliedUpside: false,
+  fiftyTwoWeekRangePosition: false,
 };
 
 export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
   useSectorWeights: true,
+  supplementalMetrics: DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS,
 };
 
 export const APP_SETTINGS_STORAGE_KEY = "invest-rate.settings.v1";
@@ -57,5 +70,39 @@ function normalizeAnalysisSettings(value: unknown): AnalysisSettings {
       typeof rawSettings.useSectorWeights === "boolean"
         ? rawSettings.useSectorWeights
         : DEFAULT_ANALYSIS_SETTINGS.useSectorWeights,
+    supplementalMetrics: normalizeSupplementalMetricSettings(rawSettings),
+  };
+}
+
+function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & { showSupplementalMetrics?: unknown }) {
+  if (value.showSupplementalMetrics === true) {
+    return {
+      totalShareholderYield: true,
+      fcfYield: true,
+      impliedUpside: true,
+      fiftyTwoWeekRangePosition: true,
+    };
+  }
+
+  const rawMetrics = value.supplementalMetrics;
+  if (!rawMetrics || typeof rawMetrics !== "object" || Array.isArray(rawMetrics)) {
+    return DEFAULT_ANALYSIS_SETTINGS.supplementalMetrics;
+  }
+
+  return {
+    totalShareholderYield:
+      typeof rawMetrics.totalShareholderYield === "boolean"
+        ? rawMetrics.totalShareholderYield
+        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.totalShareholderYield,
+    fcfYield:
+      typeof rawMetrics.fcfYield === "boolean" ? rawMetrics.fcfYield : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.fcfYield,
+    impliedUpside:
+      typeof rawMetrics.impliedUpside === "boolean"
+        ? rawMetrics.impliedUpside
+        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.impliedUpside,
+    fiftyTwoWeekRangePosition:
+      typeof rawMetrics.fiftyTwoWeekRangePosition === "boolean"
+        ? rawMetrics.fiftyTwoWeekRangePosition
+        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.fiftyTwoWeekRangePosition,
   };
 }

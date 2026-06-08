@@ -28,6 +28,7 @@ import Link from "next/link";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS,
   readAnalysisSettings,
   sectorWeightsSearchParam,
   SECTOR_WEIGHTS_QUERY_PARAM,
@@ -424,7 +425,10 @@ export default function Sp500TopPage() {
   }, [language]);
 
   useEffect(() => {
-    writeAnalysisSettings(SP500_TOP_SETTINGS_STORAGE_KEY, { useSectorWeights });
+    writeAnalysisSettings(SP500_TOP_SETTINGS_STORAGE_KEY, {
+      useSectorWeights,
+      supplementalMetrics: DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS,
+    });
   }, [useSectorWeights]);
 
   const constituentBySymbol = useMemo(

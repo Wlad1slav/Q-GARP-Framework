@@ -20,6 +20,12 @@ export const termDefinitions = {
     roe: "ROE - return on equity, прибутковість власного капіталу. Показує, наскільки ефективно компанія заробляє на капіталі акціонерів.",
     marketCap: "Капіталізація - ринкова вартість компанії: ціна акції, помножена на кількість акцій.",
     spy: "SPY - ETF на S&P 500. Використовується як грубий бенчмарк ринку США.",
+    totalShareholderYield:
+      "Total Shareholder Yield - дохідність повернення капіталу акціонерам: дивідендна дохідність плюс buyback yield.",
+    fcfYield: "FCF yield - вільний грошовий потік відносно ринкової капіталізації.",
+    impliedUpside: "Implied upside - потенціал до медіанного target price аналітиків відносно поточної ціни.",
+    fiftyTwoWeekRangePosition:
+      "Позиція в 52-тижневому діапазоні - де поточна ціна між річним мінімумом і максимумом.",
   },
   en: {
     cagr: "CAGR - compound annual growth rate. Shows the steady annual pace a metric would need to grow over a period.",
@@ -39,6 +45,11 @@ export const termDefinitions = {
     roe: "ROE - return on equity. Shows how efficiently a company earns on shareholder capital.",
     marketCap: "Market cap - the company's market value: share price multiplied by shares outstanding.",
     spy: "SPY - an ETF tracking the S&P 500. Used here as a rough benchmark for the US market.",
+    totalShareholderYield:
+      "Total Shareholder Yield - capital returned to shareholders: dividend yield plus buyback yield.",
+    fcfYield: "FCF yield - free cash flow relative to market capitalization.",
+    impliedUpside: "Implied upside - analyst median target price potential relative to the current price.",
+    fiftyTwoWeekRangePosition: "52-week range position - where the current price sits between the yearly low and high.",
   },
 } as const satisfies Record<Language, Record<string, string>>;
 
@@ -46,6 +57,10 @@ export type TermKey = keyof (typeof termDefinitions)["uk"];
 
 const labelMatchers: Array<[RegExp, TermKey]> = [
   [/P\/FCF/i, "pfcf"],
+  [/FCF yield/i, "fcfYield"],
+  [/Total Shareholder Yield/i, "totalShareholderYield"],
+  [/Implied upside/i, "impliedUpside"],
+  [/52-тижнев|52-week/i, "fiftyTwoWeekRangePosition"],
   [/P\/S/i, "ps"],
   [/P\/E/i, "pe"],
   [/CAGR/i, "cagr"],

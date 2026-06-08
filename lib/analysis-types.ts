@@ -1,6 +1,15 @@
 export type MetricTone = "good" | "watch" | "bad" | "unknown";
 export type PeerSource = "actual" | "recommended" | "manual";
 
+export const supplementalMetricIds = [
+  "totalShareholderYield",
+  "fcfYield",
+  "impliedUpside",
+  "fiftyTwoWeekRangePosition",
+] as const;
+
+export type SupplementalMetricId = (typeof supplementalMetricIds)[number];
+
 export interface EvidenceItem {
   label: string;
   value: string;
@@ -42,5 +51,18 @@ export interface AnalysisResult {
   peerSymbols: string[];
   recommendedPeerSymbols: string[];
   peerSource: PeerSource;
+  dataNotes: string[];
+}
+
+export interface SupplementalMetricResult {
+  id: SupplementalMetricId;
+  value: string;
+  detail?: string;
+}
+
+export interface SupplementalMetricsResult {
+  symbol: string;
+  asOf: string;
+  metrics: SupplementalMetricResult[];
   dataNotes: string[];
 }

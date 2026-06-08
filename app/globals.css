@@ -138,6 +138,15 @@ button:disabled {
   margin-top: 9px;
 }
 
+.settingsSectionLabel {
+  margin: 4px 0 1px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 820;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
 .settingsToggleLabel {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -813,6 +822,86 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 0.82rem;
+}
+
+.supplementalGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: -2px 0 18px;
+}
+
+.supplementalMetric {
+  min-width: 0;
+  min-height: 96px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.supplementalMetricTop {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.supplementalMetricTop > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.supplementalMetricIcon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border-radius: 0;
+}
+
+.supplementalMetric strong {
+  display: block;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+  font-size: 1.08rem;
+  line-height: 1.18;
+}
+
+.supplementalMetric small {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.supplementalMetricError {
+  color: var(--red) !important;
+}
+
+.supplementalLoadingValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.supplementalNote {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .peerEditor {
@@ -1956,6 +2045,10 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .supplementalGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .peerEditor {
     grid-template-columns: 1fr;
   }
@@ -2038,6 +2131,7 @@ button:disabled {
   }
 
   .companyGrid,
+  .supplementalGrid,
   .metricGrid,
   .leaderGrid {
     grid-template-columns: 1fr;

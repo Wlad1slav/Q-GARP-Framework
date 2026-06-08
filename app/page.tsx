@@ -28,8 +28,17 @@ import {
   sectorWeightsSearchParam,
   SECTOR_WEIGHTS_QUERY_PARAM,
   writeAnalysisSettings,
+  type SupplementalMetricSettings,
 } from "@/lib/analysis-settings";
-import type { AnalysisResult, IndicatorResult, MetricTone } from "@/lib/analysis-types";
+import type {
+  AnalysisResult,
+  IndicatorResult,
+  MetricTone,
+  SupplementalMetricId,
+  SupplementalMetricResult,
+  SupplementalMetricsResult,
+} from "@/lib/analysis-types";
+import { supplementalMetricIds } from "@/lib/analysis-types";
 import { companyLogoUrl } from "@/lib/company-logo";
 import {
   defaultLanguage,
@@ -58,10 +67,19 @@ const toneIcons = {
   unknown: AlertTriangle,
 } satisfies Record<MetricTone, typeof CheckCircle2>;
 
+const supplementalMetricIcons = {
+  totalShareholderYield: BadgeDollarSign,
+  fcfYield: Calculator,
+  impliedUpside: TrendingUp,
+  fiftyTwoWeekRangePosition: BarChart3,
+} satisfies Record<SupplementalMetricId, typeof TrendingUp>;
+
 const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v2";
+const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v1";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
+const MAX_STORED_SUPPLEMENTAL_RESULTS = 80;
 const METHODOLOGY_SCORING_PROFILES_URL =
   "https://github.com/Wlad1slav/Q-GARP-Framework/blob/main/METHODOLOGY.md#3-scoring-profiles";
 
@@ -69,17 +87,58 @@ const settingsPanelCopy = {
   uk: {
     title: "Налаштування",
     sectorWeights: "Увімкнути ваги залежно від галузі",
+    supplementalMetricsTitle: "Додаткові метрики стоку",
     methodologyTitle: "Методологія scoring profiles",
   },
   en: {
     title: "Settings",
     sectorWeights: "Enable industry-based weights",
+    supplementalMetricsTitle: "Supplemental stock metrics",
     methodologyTitle: "Scoring profiles methodology",
   },
-} satisfies Record<Language, { title: string; sectorWeights: string; methodologyTitle: string }>;
+} satisfies Record<Language, { title: string; sectorWeights: string; supplementalMetricsTitle: string; methodologyTitle: string }>;
+
+const supplementalMetricsCopy = {
+  uk: {
+    ariaLabel: "Додаткові метрики стоку",
+    loading: "Завантаження",
+    errorFallback: "Не вдалося завантажити додаткові метрики.",
+    metrics: {
+      totalShareholderYield: "Total Shareholder Yield",
+      fcfYield: "FCF yield",
+      impliedUpside: "Implied upside",
+      fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
+    },
+  },
+  en: {
+    ariaLabel: "Supplemental stock metrics",
+    loading: "Loading",
+    errorFallback: "Could not load supplemental metrics.",
+    metrics: {
+      totalShareholderYield: "Total Shareholder Yield",
+      fcfYield: "FCF yield",
+      impliedUpside: "Implied upside",
+      fiftyTwoWeekRangePosition: "52-week range position",
+    },
+  },
+} satisfies Record<
+  Language,
+  {
+    ariaLabel: string;
+    loading: string;
+    errorFallback: string;
+    metrics: Record<SupplementalMetricId, string>;
+  }
+>;
 
 type CachedAnalysisEntry = {
   result: AnalysisResult;
+  expiresAt: number;
+};
+
+type CachedSupplementalEntry = {
+  dataNotes: string[];
+  result: SupplementalMetricResult;
   expiresAt: number;
 };
 
@@ -93,8 +152,19 @@ export default function Home() {
   const [peerInput, setPeerInput] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
   const [useSectorWeights, setUseSectorWeights] = useState(() => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights);
+  const [supplementalMetricSettings, setSupplementalMetricSettings] = useState(
+    () => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).supplementalMetrics,
+  );
+  const [supplementalMetrics, setSupplementalMetrics] = useState<Partial<Record<SupplementalMetricId, SupplementalMetricResult>>>({});
+  const [supplementalLoading, setSupplementalLoading] = useState<Partial<Record<SupplementalMetricId, boolean>>>({});
+  const [supplementalErrors, setSupplementalErrors] = useState<Partial<Record<SupplementalMetricId, string>>>({});
+  const [supplementalNotes, setSupplementalNotes] = useState<Partial<Record<SupplementalMetricId, string[]>>>({});
   const didReadInitialUrl = useRef(false);
+  const supplementalRequestIds = useRef(
+    Object.fromEntries(supplementalMetricIds.map((id) => [id, 0])) as Record<SupplementalMetricId, number>,
+  );
   const t = uiCopy[language];
+  const enabledSupplementalMetricIds = supplementalMetricIds.filter((id) => supplementalMetricSettings[id]);
 
   const asOf = analysis?.asOf
     ? new Intl.DateTimeFormat(localeForLanguage(language), {
@@ -103,12 +173,104 @@ export default function Home() {
       }).format(new Date(analysis.asOf))
     : "";
 
+  const clearSupplementalMetrics = useCallback((metricIds: readonly SupplementalMetricId[] = supplementalMetricIds) => {
+    for (const id of metricIds) {
+      supplementalRequestIds.current[id] += 1;
+    }
+
+    setSupplementalMetrics((current) => omitSupplementalKeys(current, metricIds));
+    setSupplementalLoading((current) => omitSupplementalKeys(current, metricIds));
+    setSupplementalErrors((current) => omitSupplementalKeys(current, metricIds));
+    setSupplementalNotes((current) => omitSupplementalKeys(current, metricIds));
+  }, []);
+
+  const loadSupplementalMetric = useCallback(
+    async (metricId: SupplementalMetricId, nextTicker: string, requestLanguage = language) => {
+      const cleanTicker = nextTicker.trim();
+      if (!cleanTicker) {
+        clearSupplementalMetrics([metricId]);
+        return;
+      }
+
+      const requestId = supplementalRequestIds.current[metricId] + 1;
+      supplementalRequestIds.current[metricId] = requestId;
+      const requestCopy = supplementalMetricsCopy[requestLanguage];
+      const cacheKey = supplementalCacheKey(cleanTicker, requestLanguage, metricId);
+      const cachedEntry = readCachedSupplementalMetric(cacheKey);
+
+      if (cachedEntry) {
+        if (requestId !== supplementalRequestIds.current[metricId]) return;
+        setSupplementalMetrics((current) => ({ ...current, [metricId]: cachedEntry.result }));
+        setSupplementalNotes((current) => ({ ...current, [metricId]: cachedEntry.dataNotes }));
+        setSupplementalErrors((current) => omitSupplementalKeys(current, [metricId]));
+        setSupplementalLoading((current) => omitSupplementalKeys(current, [metricId]));
+        return;
+      }
+
+      setSupplementalLoading((current) => ({ ...current, [metricId]: true }));
+      setSupplementalErrors((current) => omitSupplementalKeys(current, [metricId]));
+      setSupplementalMetrics((current) => omitSupplementalKeys(current, [metricId]));
+      setSupplementalNotes((current) => omitSupplementalKeys(current, [metricId]));
+
+      try {
+        const params = new URLSearchParams({
+          ticker: cleanTicker,
+          lang: requestLanguage,
+          metric: metricId,
+        });
+        const response = await fetch(`/api/analyze/supplemental?${params.toString()}`);
+        const payload = (await response.json()) as SupplementalMetricsResult & { message?: string };
+
+        if (!response.ok) {
+          throw new Error(payload.message ?? requestCopy.errorFallback);
+        }
+
+        const metric = payload.metrics.find((item) => item.id === metricId);
+        if (!metric) {
+          throw new Error(requestCopy.errorFallback);
+        }
+
+        if (requestId !== supplementalRequestIds.current[metricId]) return;
+        writeCachedSupplementalMetric(cacheKey, metric, payload.dataNotes);
+        setSupplementalMetrics((current) => ({ ...current, [metricId]: metric }));
+        setSupplementalNotes((current) => ({ ...current, [metricId]: payload.dataNotes }));
+        setSupplementalErrors((current) => omitSupplementalKeys(current, [metricId]));
+      } catch (caught) {
+        if (requestId !== supplementalRequestIds.current[metricId]) return;
+        setSupplementalMetrics((current) => omitSupplementalKeys(current, [metricId]));
+        setSupplementalNotes((current) => omitSupplementalKeys(current, [metricId]));
+        setSupplementalErrors((current) => ({
+          ...current,
+          [metricId]: caught instanceof Error ? caught.message : requestCopy.errorFallback,
+        }));
+      } finally {
+        if (requestId === supplementalRequestIds.current[metricId]) {
+          setSupplementalLoading((current) => omitSupplementalKeys(current, [metricId]));
+        }
+      }
+    },
+    [clearSupplementalMetrics, language],
+  );
+
+  const loadEnabledSupplementalMetrics = useCallback(
+    (nextTicker: string, requestLanguage = language, requestSettings = supplementalMetricSettings) => {
+      const metricIds = enabledSupplementalMetricsFromSettings(requestSettings);
+      clearSupplementalMetrics();
+
+      for (const metricId of metricIds) {
+        void loadSupplementalMetric(metricId, nextTicker, requestLanguage);
+      }
+    },
+    [clearSupplementalMetrics, language, loadSupplementalMetric, supplementalMetricSettings],
+  );
+
   const loadAnalysis = useCallback(
     async (
       nextTicker: string,
       peerOverride?: string[] | null,
       requestLanguage = language,
       requestUseSectorWeights = useSectorWeights,
+      requestSupplementalMetricSettings = supplementalMetricSettings,
     ) => {
       const cleanTicker = nextTicker.trim();
       if (!cleanTicker) return;
@@ -128,6 +290,7 @@ export default function Home() {
         setPromptCopied(false);
         setLastTicker(normalizeTicker(cleanTicker));
         setError("");
+        loadEnabledSupplementalMetrics(cleanTicker, requestLanguage, requestSupplementalMetricSettings);
         return;
       }
 
@@ -149,14 +312,22 @@ export default function Home() {
         setPeerInput(payload.peerSymbols?.join(", ") ?? "");
         setPromptCopied(false);
         setLastTicker(cleanTicker.toUpperCase());
+        loadEnabledSupplementalMetrics(cleanTicker, requestLanguage, requestSupplementalMetricSettings);
       } catch (caught) {
         setAnalysis(null);
         setError(caught instanceof Error ? caught.message : requestCopy.errors.loadData);
+        clearSupplementalMetrics();
       } finally {
         setLoading(false);
       }
     },
-    [language, useSectorWeights],
+    [
+      clearSupplementalMetrics,
+      language,
+      loadEnabledSupplementalMetrics,
+      supplementalMetricSettings,
+      useSectorWeights,
+    ],
   );
 
   useEffect(() => {
@@ -174,11 +345,11 @@ export default function Home() {
     const cleanTicker = initialTicker.toUpperCase();
     const timer = window.setTimeout(() => {
       setTicker(cleanTicker);
-      void loadAnalysis(cleanTicker, undefined, initialLanguage, useSectorWeights);
+      void loadAnalysis(cleanTicker, undefined, initialLanguage, useSectorWeights, supplementalMetricSettings);
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loadAnalysis, useSectorWeights]);
+  }, [loadAnalysis, supplementalMetricSettings, useSectorWeights]);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -186,8 +357,8 @@ export default function Home() {
   }, [language]);
 
   useEffect(() => {
-    writeAnalysisSettings(APP_SETTINGS_STORAGE_KEY, { useSectorWeights });
-  }, [useSectorWeights]);
+    writeAnalysisSettings(APP_SETTINGS_STORAGE_KEY, { useSectorWeights, supplementalMetrics: supplementalMetricSettings });
+  }, [supplementalMetricSettings, useSectorWeights]);
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -213,8 +384,25 @@ export default function Home() {
     setUseSectorWeights(nextUseSectorWeights);
     const targetTicker = analysis?.symbol ?? lastTicker;
     if (targetTicker) {
-      void loadAnalysis(targetTicker, undefined, language, nextUseSectorWeights);
+      void loadAnalysis(targetTicker, undefined, language, nextUseSectorWeights, supplementalMetricSettings);
     }
+  }
+
+  function changeSupplementalMetric(metricId: SupplementalMetricId, enabled: boolean) {
+    if (enabled === supplementalMetricSettings[metricId]) return;
+
+    const nextSettings = {
+      ...supplementalMetricSettings,
+      [metricId]: enabled,
+    };
+    setSupplementalMetricSettings(nextSettings);
+    const targetTicker = analysis?.symbol ?? lastTicker;
+    if (enabled && targetTicker) {
+      void loadSupplementalMetric(metricId, targetTicker, language);
+      return;
+    }
+
+    clearSupplementalMetrics([metricId]);
   }
 
   function applyPeerGroup() {
@@ -247,7 +435,9 @@ export default function Home() {
     <>
       <SettingsModule
         language={language}
+        supplementalMetricSettings={supplementalMetricSettings}
         useSectorWeights={useSectorWeights}
+        onSupplementalMetricChange={changeSupplementalMetric}
         onUseSectorWeightsChange={changeUseSectorWeights}
       />
 
@@ -392,6 +582,17 @@ export default function Home() {
             ) : null}
           </div>
 
+          {enabledSupplementalMetricIds.length ? (
+            <SupplementalMetricsPanel
+              enabledMetricIds={enabledSupplementalMetricIds}
+              errors={supplementalErrors}
+              language={language}
+              loading={supplementalLoading}
+              metrics={supplementalMetrics}
+              notes={supplementalNotes}
+            />
+          ) : null}
+
           <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
             <div className="peerEditorText">
               <span className={`peerSourceBadge ${analysis.peerSource}`}>
@@ -485,14 +686,19 @@ export default function Home() {
 
 function SettingsModule({
   language,
+  supplementalMetricSettings,
   useSectorWeights,
+  onSupplementalMetricChange,
   onUseSectorWeightsChange,
 }: {
   language: Language;
+  supplementalMetricSettings: SupplementalMetricSettings;
   useSectorWeights: boolean;
+  onSupplementalMetricChange: (metricId: SupplementalMetricId, enabled: boolean) => void;
   onUseSectorWeightsChange: (enabled: boolean) => void;
 }) {
   const t = settingsPanelCopy[language];
+  const supplementalCopy = supplementalMetricsCopy[language];
   const [open, setOpen] = useState(false);
   const menuId = "app-settings-menu";
 
@@ -524,6 +730,18 @@ function SettingsModule({
             <span className="settingsSwitch" aria-hidden="true" />
             <span>{t.sectorWeights}</span>
           </label>
+          <div className="settingsSectionLabel">{t.supplementalMetricsTitle}</div>
+          {supplementalMetricIds.map((metricId) => (
+            <label className="settingsToggleLabel" key={metricId}>
+              <input
+                checked={supplementalMetricSettings[metricId]}
+                type="checkbox"
+                onChange={(event) => onSupplementalMetricChange(metricId, event.currentTarget.checked)}
+              />
+              <span className="settingsSwitch" aria-hidden="true" />
+              <span>{supplementalCopy.metrics[metricId]}</span>
+            </label>
+          ))}
           <a
             className="settingsHelpLink"
             href={METHODOLOGY_SCORING_PROFILES_URL}
@@ -537,6 +755,64 @@ function SettingsModule({
         </div>
       </div>
     </aside>
+  );
+}
+
+function SupplementalMetricsPanel({
+  enabledMetricIds,
+  errors,
+  language,
+  loading,
+  metrics,
+  notes,
+}: {
+  enabledMetricIds: readonly SupplementalMetricId[];
+  errors: Partial<Record<SupplementalMetricId, string>>;
+  language: Language;
+  loading: Partial<Record<SupplementalMetricId, boolean>>;
+  metrics: Partial<Record<SupplementalMetricId, SupplementalMetricResult>>;
+  notes: Partial<Record<SupplementalMetricId, string[]>>;
+}) {
+  const t = supplementalMetricsCopy[language];
+  const dataNotes = Array.from(new Set(enabledMetricIds.flatMap((id) => notes[id] ?? [])));
+
+  return (
+    <section className="supplementalGrid" aria-busy={enabledMetricIds.some((id) => loading[id])} aria-label={t.ariaLabel}>
+      {enabledMetricIds.map((id) => {
+        const metric = metrics[id];
+        const error = errors[id];
+        const isLoading = Boolean(loading[id]);
+        const Icon = supplementalMetricIcons[id];
+
+        return (
+          <article className="supplementalMetric" key={id}>
+            <div className="supplementalMetricTop">
+              <span className="supplementalMetricIcon" aria-hidden="true">
+                <Icon size={17} />
+              </span>
+              <span>
+                <TermLabel label={t.metrics[id]} language={language} termKey={termForLabel(t.metrics[id])} />
+              </span>
+            </div>
+            <strong>
+              {isLoading ? (
+                <span className="supplementalLoadingValue">
+                  <Loader2 className="spinning" size={16} />
+                  {t.loading}
+                </span>
+              ) : (
+                (metric?.value ?? uiCopy[language].notAvailable)
+              )}
+            </strong>
+            {error && !isLoading ? <small className="supplementalMetricError">{error}</small> : null}
+            {!error && metric?.detail && !isLoading ? <small>{metric.detail}</small> : null}
+          </article>
+        );
+      })}
+      {dataNotes.length ? (
+        <p className="supplementalNote">{dataNotes.join(" ")}</p>
+      ) : null}
+    </section>
   );
 }
 
@@ -825,11 +1101,59 @@ function writeCachedAnalysis(key: string, result: AnalysisResult) {
   window.localStorage.setItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(pruneAnalysisCache(cache)));
 }
 
+function supplementalCacheKey(ticker: string, language: Language, metricId: SupplementalMetricId) {
+  return `${language}|${normalizeTicker(ticker)}|${metricId}`;
+}
+
+function readCachedSupplementalMetric(key: string): { result: SupplementalMetricResult; dataNotes: string[] } | null {
+  if (typeof window === "undefined") return null;
+
+  const cache = readSupplementalCache();
+  const entry = cache[key];
+  if (!entry) return null;
+
+  if (entry.expiresAt <= Date.now()) {
+    delete cache[key];
+    window.localStorage.setItem(SUPPLEMENTAL_CACHE_STORAGE_KEY, JSON.stringify(cache));
+    return null;
+  }
+
+  return {
+    result: entry.result,
+    dataNotes: Array.isArray(entry.dataNotes) ? entry.dataNotes : [],
+  };
+}
+
+function writeCachedSupplementalMetric(key: string, result: SupplementalMetricResult, dataNotes: string[]) {
+  if (typeof window === "undefined") return;
+
+  const cache = pruneSupplementalCache(readSupplementalCache());
+  cache[key] = {
+    dataNotes,
+    result,
+    expiresAt: Date.now() + ANALYSIS_CACHE_TTL_MS,
+  };
+
+  window.localStorage.setItem(SUPPLEMENTAL_CACHE_STORAGE_KEY, JSON.stringify(pruneSupplementalCache(cache)));
+}
+
 function readAnalysisCache(): Record<string, CachedAnalysisEntry> {
   if (typeof window === "undefined") return {};
 
   try {
     const raw = window.localStorage.getItem(ANALYSIS_CACHE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readSupplementalCache(): Record<string, CachedSupplementalEntry> {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(SUPPLEMENTAL_CACHE_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
@@ -845,4 +1169,29 @@ function pruneAnalysisCache(cache: Record<string, CachedAnalysisEntry>) {
     .slice(0, MAX_STORED_ANALYSES);
 
   return Object.fromEntries(freshEntries) as Record<string, CachedAnalysisEntry>;
+}
+
+function pruneSupplementalCache(cache: Record<string, CachedSupplementalEntry>) {
+  const now = Date.now();
+  const freshEntries = Object.entries(cache)
+    .filter(([, entry]) => entry?.expiresAt > now && entry?.result)
+    .sort(([, left], [, right]) => right.expiresAt - left.expiresAt)
+    .slice(0, MAX_STORED_SUPPLEMENTAL_RESULTS);
+
+  return Object.fromEntries(freshEntries) as Record<string, CachedSupplementalEntry>;
+}
+
+function enabledSupplementalMetricsFromSettings(settings: SupplementalMetricSettings) {
+  return supplementalMetricIds.filter((id) => settings[id]);
+}
+
+function omitSupplementalKeys<T>(
+  value: Partial<Record<SupplementalMetricId, T>>,
+  metricIds: readonly SupplementalMetricId[],
+) {
+  const next = { ...value };
+  for (const id of metricIds) {
+    delete next[id];
+  }
+  return next;
 }
