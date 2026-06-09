@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  ArrowLeft,
   BadgeDollarSign,
   BarChart3,
   Calculator,
@@ -18,30 +17,32 @@ import {
   Play,
   RefreshCw,
   Search,
-  Settings,
   ShieldCheck,
   TrendingUp,
   X,
   XCircle,
 } from "lucide-react";
-import Link from "next/link";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS,
+  APP_SETTINGS_STORAGE_KEY,
   readAnalysisSettings,
   sectorWeightsSearchParam,
   SECTOR_WEIGHTS_QUERY_PARAM,
-  SP500_TOP_SETTINGS_STORAGE_KEY,
-  writeAnalysisSettings,
 } from "@/lib/analysis-settings";
 import type { MetricTone } from "@/lib/analysis-types";
+import {
+  APP_ANALYSIS_SETTINGS_CHANGE_EVENT,
+  APP_LANGUAGE_CHANGE_EVENT,
+  type AppAnalysisSettingsChangeDetail,
+  type AppLanguageChangeDetail,
+} from "@/lib/app-events";
 import { companyLogoUrl } from "@/lib/company-logo";
+import { LANGUAGE_STORAGE_KEY, normalizeLanguage, type Language } from "@/lib/i18n";
 import type { Sp500Constituent } from "@/lib/sp500";
 import type { Sp500IndicatorId, Sp500TopFailure, Sp500TopItem, Sp500TopResponse } from "@/lib/sp500-top-types";
 import { sp500IndicatorIds } from "@/lib/sp500-top-types";
 
-type Language = "uk" | "en";
 type MetricKey = "score" | Sp500IndicatorId;
 
 type ConstituentsPayload = {
@@ -52,13 +53,8 @@ type ConstituentsPayload = {
   message?: string;
 };
 
-const supportedLanguages = ["uk", "en"] as const;
-const languageLabels: Record<Language, string> = { uk: "UA", en: "EN" };
-const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const SP500_SCAN_CACHE_STORAGE_KEY = "invest-rate.sp500-scan.v4";
 const SP500_SCAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const METHODOLOGY_SCORING_PROFILES_URL =
-  "https://github.com/Wlad1slav/Q-GARP-Framework/blob/main/METHODOLOGY.md#3-scoring-profiles";
 const BATCH_SIZE = 1;
 const TOP_COUNT = 10;
 const RANKING_PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
@@ -351,7 +347,7 @@ export default function Sp500TopPage() {
     typeof window === "undefined" ? "uk" : normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)),
   );
   const [useSectorWeights, setUseSectorWeights] = useState(
-    () => readAnalysisSettings(SP500_TOP_SETTINGS_STORAGE_KEY).useSectorWeights,
+    () => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights,
   );
   const [constituents, setConstituents] = useState<Sp500Constituent[]>([]);
   const [source, setSource] = useState<{ name: string; url: string; asOf: string } | null>(null);
@@ -371,11 +367,26 @@ export default function Sp500TopPage() {
   const [selectedHeatmapItem, setSelectedHeatmapItem] = useState<HeatmapItem | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const shouldStopRef = useRef(false);
+  const pendingUseSectorWeightsRef = useRef<boolean | null>(null);
   const didRestoreScanRef = useRef(false);
   const itemMapRef = useRef<Map<string, Sp500TopItem>>(new Map());
   const failedRef = useRef<Sp500TopFailure[]>([]);
   const processedRef = useRef<Set<string>>(new Set());
   const t = copy[language];
+
+  const restoreScanState = useCallback((nextUseSectorWeights: boolean) => {
+    const restoredItems = readSp500ScanCache(constituents, nextUseSectorWeights);
+
+    itemMapRef.current = new Map(restoredItems.map((item) => [item.symbol, item]));
+    failedRef.current = [];
+    processedRef.current = new Set(restoredItems.map((item) => item.symbol));
+    setItems(restoredItems);
+    setFailed([]);
+    setProcessedCount(restoredItems.length);
+    setCurrentBatch("");
+    setFocusedHeatmapSector(null);
+    setSelectedHeatmapItem(null);
+  }, [constituents]);
 
   useEffect(() => {
     const initialLanguage = normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
@@ -425,11 +436,40 @@ export default function Sp500TopPage() {
   }, [language]);
 
   useEffect(() => {
-    writeAnalysisSettings(SP500_TOP_SETTINGS_STORAGE_KEY, {
-      useSectorWeights,
-      supplementalMetrics: DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS,
-    });
-  }, [useSectorWeights]);
+    function handleLanguageChange(event: Event) {
+      const detail = (event as CustomEvent<AppLanguageChangeDetail>).detail;
+      setLanguage(normalizeLanguage(detail?.language));
+    }
+
+    window.addEventListener(APP_LANGUAGE_CHANGE_EVENT, handleLanguageChange);
+    return () => window.removeEventListener(APP_LANGUAGE_CHANGE_EVENT, handleLanguageChange);
+  }, []);
+
+  useEffect(() => {
+    function handleSettingsChange(event: Event) {
+      const detail = (event as CustomEvent<AppAnalysisSettingsChangeDetail>).detail;
+      const nextUseSectorWeights = (detail?.settings ?? readAnalysisSettings(APP_SETTINGS_STORAGE_KEY)).useSectorWeights;
+
+      if (nextUseSectorWeights === useSectorWeights) {
+        pendingUseSectorWeightsRef.current = null;
+        return;
+      }
+
+      if (scanning) {
+        pendingUseSectorWeightsRef.current = nextUseSectorWeights;
+        shouldStopRef.current = true;
+        setStopping(true);
+        abortRef.current?.abort();
+        return;
+      }
+
+      setUseSectorWeights(nextUseSectorWeights);
+      restoreScanState(nextUseSectorWeights);
+    }
+
+    window.addEventListener(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, handleSettingsChange);
+    return () => window.removeEventListener(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, handleSettingsChange);
+  }, [restoreScanState, scanning, useSectorWeights]);
 
   const constituentBySymbol = useMemo(
     () => new Map(constituents.map((constituent) => [constituent.symbol, constituent])),
@@ -493,10 +533,6 @@ export default function Sp500TopPage() {
   const isComplete = constituents.length > 0 && processedCount >= constituents.length;
   const statusText = scanning ? t.scanning : isComplete ? t.complete : processedCount ? t.stopped : t.idle;
 
-  function changeLanguage(nextLanguage: Language) {
-    setLanguage(nextLanguage);
-  }
-
   function clearScanState(options: { removeCache?: boolean } = {}) {
     itemMapRef.current = new Map();
     failedRef.current = [];
@@ -507,27 +543,6 @@ export default function Sp500TopPage() {
     setItems([]);
     setFailed([]);
     setProcessedCount(0);
-    setCurrentBatch("");
-    setFocusedHeatmapSector(null);
-    setSelectedHeatmapItem(null);
-  }
-
-  function changeUseSectorWeights(nextUseSectorWeights: boolean) {
-    if (nextUseSectorWeights === useSectorWeights || scanning) return;
-
-    setUseSectorWeights(nextUseSectorWeights);
-    restoreScanState(nextUseSectorWeights);
-  }
-
-  function restoreScanState(nextUseSectorWeights: boolean) {
-    const restoredItems = readSp500ScanCache(constituents, nextUseSectorWeights);
-
-    itemMapRef.current = new Map(restoredItems.map((item) => [item.symbol, item]));
-    failedRef.current = [];
-    processedRef.current = new Set(restoredItems.map((item) => item.symbol));
-    setItems(restoredItems);
-    setFailed([]);
-    setProcessedCount(restoredItems.length);
     setCurrentBatch("");
     setFocusedHeatmapSector(null);
     setSelectedHeatmapItem(null);
@@ -584,6 +599,14 @@ export default function Sp500TopPage() {
     setCurrentBatch("");
     setScanning(false);
     setStopping(false);
+
+    const pendingUseSectorWeights = pendingUseSectorWeightsRef.current;
+    pendingUseSectorWeightsRef.current = null;
+
+    if (pendingUseSectorWeights !== null && pendingUseSectorWeights !== useSectorWeights) {
+      setUseSectorWeights(pendingUseSectorWeights);
+      restoreScanState(pendingUseSectorWeights);
+    }
   }
 
   async function fetchSp500TopBatch(batch: string[], batchUseSectorWeights: boolean, signal: AbortSignal) {
@@ -652,49 +675,22 @@ export default function Sp500TopPage() {
 
   if (loadingConstituents) {
     return (
-      <>
-        <Sp500SettingsModule
-          disabled={false}
-          language={language}
-          useSectorWeights={useSectorWeights}
-          onUseSectorWeightsChange={changeUseSectorWeights}
-        />
-        <main className="appShell sp500Shell withSettings">
-          <Sp500Header language={language} onLanguageChange={changeLanguage} />
-          <StatePanel icon={<Loader2 size={34} />} title={t.loadingList} text={t.loadingListText} type="loading" />
-        </main>
-      </>
+      <main className="appShell sp500Shell">
+        <StatePanel icon={<Loader2 size={34} />} title={t.loadingList} text={t.loadingListText} type="loading" />
+      </main>
     );
   }
 
   if (error && !constituents.length) {
     return (
-      <>
-        <Sp500SettingsModule
-          disabled={false}
-          language={language}
-          useSectorWeights={useSectorWeights}
-          onUseSectorWeightsChange={changeUseSectorWeights}
-        />
-        <main className="appShell sp500Shell withSettings">
-          <Sp500Header language={language} onLanguageChange={changeLanguage} />
-          <StatePanel icon={<AlertTriangle size={34} />} title={t.failedListTitle} text={error} type="error" />
-        </main>
-      </>
+      <main className="appShell sp500Shell">
+        <StatePanel icon={<AlertTriangle size={34} />} title={t.failedListTitle} text={error} type="error" />
+      </main>
     );
   }
 
   return (
-    <>
-      <Sp500SettingsModule
-        disabled={scanning}
-        language={language}
-        useSectorWeights={useSectorWeights}
-        onUseSectorWeightsChange={changeUseSectorWeights}
-      />
-      <main className="appShell sp500Shell withSettings">
-        <Sp500Header language={language} onLanguageChange={changeLanguage} />
-
+    <main className="appShell sp500Shell">
       <section className="sp500ScanBand" aria-label={t.progress}>
         <div className="scanMain">
           <div className="scanTitleRow">
@@ -760,8 +756,6 @@ export default function Sp500TopPage() {
           {error}
         </div>
       ) : null}
-
-      <p className="finePrint sp500FinePrint">{t.peerNote}</p>
 
       <Sp500Heatmap
         focusedSector={activeFocusedHeatmapSector}
@@ -865,112 +859,7 @@ export default function Sp500TopPage() {
       {activeSelectedHeatmapItem ? (
         <HeatmapStatsModal item={activeSelectedHeatmapItem} language={language} onClose={() => setSelectedHeatmapItem(null)} />
       ) : null}
-      </main>
-    </>
-  );
-}
-
-function Sp500SettingsModule({
-  disabled,
-  language,
-  useSectorWeights,
-  onUseSectorWeightsChange,
-}: {
-  disabled: boolean;
-  language: Language;
-  useSectorWeights: boolean;
-  onUseSectorWeightsChange: (enabled: boolean) => void;
-}) {
-  const t = copy[language].settings;
-  const [open, setOpen] = useState(false);
-  const menuId = "sp500-settings-menu";
-
-  return (
-    <aside className="settingsModule" aria-label={t.title}>
-      <button
-        className="settingsMenuButton"
-        type="button"
-        aria-controls={menuId}
-        aria-expanded={open}
-        aria-label={t.title}
-        title={t.title}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <Settings size={16} />
-      </button>
-      <div className="settingsDropdown" hidden={!open} id={menuId}>
-        <div className="settingsModuleHeader">
-          <Settings size={16} />
-          <strong>{t.title}</strong>
-        </div>
-        <div className="settingsOption">
-          <label className={`settingsToggleLabel ${disabled ? "disabled" : ""}`} title={disabled ? t.disabledTitle : undefined}>
-            <input
-              checked={useSectorWeights}
-              disabled={disabled}
-              type="checkbox"
-              onChange={(event) => onUseSectorWeightsChange(event.currentTarget.checked)}
-            />
-            <span className="settingsSwitch" aria-hidden="true" />
-            <span>{t.sectorWeights}</span>
-          </label>
-          <a
-            className="settingsHelpLink"
-            href={METHODOLOGY_SCORING_PROFILES_URL}
-            target="_blank"
-            rel="noreferrer"
-            title={t.methodologyTitle}
-          >
-            <span>METHODOLOGY.md</span>
-            <ExternalLink size={12} />
-          </a>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function Sp500Header({
-  language,
-  onLanguageChange,
-}: {
-  language: Language;
-  onLanguageChange: (language: Language) => void;
-}) {
-  const t = copy[language];
-
-  return (
-    <header className="topBar sp500TopBar">
-      <div className="brand">
-        <div className="brandMark" aria-hidden="true">
-          <BarChart3 size={23} />
-        </div>
-        <div className="brandText">
-          <h1>{t.title}</h1>
-          <p>{t.subtitle}</p>
-        </div>
-      </div>
-
-      <div className="topActions sp500TopActions">
-        <Link className="githubLink" href="/">
-          <ArrowLeft size={17} />
-          <span>{t.home}</span>
-        </Link>
-        <div className="languageToggle" role="group" aria-label="Language">
-          {supportedLanguages.map((nextLanguage) => (
-            <button
-              aria-pressed={language === nextLanguage}
-              className={`languageOption ${language === nextLanguage ? "active" : ""}`}
-              key={nextLanguage}
-              type="button"
-              onClick={() => onLanguageChange(nextLanguage)}
-            >
-              {languageLabels[nextLanguage]}
-            </button>
-          ))}
-        </div>
-      </div>
-    </header>
+    </main>
   );
 }
 
@@ -1991,10 +1880,6 @@ function relativeLuminance(hex: string) {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-function normalizeLanguage(value: string | null): Language {
-  return value === "en" ? "en" : "uk";
 }
 
 function isAbortError(value: unknown) {

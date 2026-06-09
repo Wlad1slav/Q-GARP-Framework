@@ -20,7 +20,6 @@ export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
 };
 
 export const APP_SETTINGS_STORAGE_KEY = "invest-rate.settings.v1";
-export const SP500_TOP_SETTINGS_STORAGE_KEY = "invest-rate.sp500-top.settings.v1";
 
 export const SECTOR_WEIGHTS_QUERY_PARAM = "sectorWeights";
 

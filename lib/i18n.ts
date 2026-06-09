@@ -4,6 +4,7 @@ export const supportedLanguages = ["uk", "en"] as const;
 export type Language = (typeof supportedLanguages)[number];
 
 export const defaultLanguage: Language = "uk";
+export const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 
 export function normalizeLanguage(value: string | null | undefined): Language {
   return value === "en" ? "en" : defaultLanguage;
@@ -20,7 +21,7 @@ export const languageLabels: Record<Language, string> = {
 
 export const uiCopy = {
   uk: {
-    brandTitle: "Q-GARP Framework - чеклист Тараса Гука",
+    brandTitle: "Q-GARP",
     brandSubtitle: "Чеклист якісного зростання за розумною ціною",
     notAvailable: "н/д",
     currencyUnavailable: "валюта н/д",
@@ -70,6 +71,12 @@ export const uiCopy = {
       riskPenalty: "Штраф",
       profile: "Профіль",
     },
+    scoreLabels: {
+      good: "Сильний профіль",
+      watch: "Змішаний профіль",
+      bad: "Слабкий профіль",
+      unknown: "Даних замало",
+    } satisfies Record<MetricTone, string>,
     states: {
       loadingTitle: "Рахую показники",
       loadingText: "Фінзвітність, мультиплікатори, peer-група, SBC.",
@@ -85,7 +92,7 @@ export const uiCopy = {
     } satisfies Record<MetricTone, string>,
   },
   en: {
-    brandTitle: "Q-GARP Framework - Taras Guk checklist",
+    brandTitle: "Q-GARP",
     brandSubtitle: "Quality growth at a reasonable price checklist",
     notAvailable: "n/a",
     currencyUnavailable: "currency n/a",
@@ -135,6 +142,12 @@ export const uiCopy = {
       riskPenalty: "Penalty",
       profile: "Profile",
     },
+    scoreLabels: {
+      good: "Strong profile",
+      watch: "Mixed profile",
+      bad: "Weak profile",
+      unknown: "Not enough data",
+    } satisfies Record<MetricTone, string>,
     states: {
       loadingTitle: "Calculating metrics",
       loadingText: "Financials, multiples, peer group, SBC.",

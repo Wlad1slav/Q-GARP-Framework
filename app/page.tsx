@@ -9,21 +9,18 @@ import {
   CircleAlert,
   ClipboardCopy,
   Loader2,
-  ExternalLink,
-  RefreshCw,
   RotateCcw,
   Save,
   Search,
-  Settings,
   ShieldCheck,
   TrendingUp,
   UsersRound,
   XCircle,
 } from "lucide-react";
-import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
+  parseSectorWeightsFlag,
   readAnalysisSettings,
   sectorWeightsSearchParam,
   SECTOR_WEIGHTS_QUERY_PARAM,
@@ -42,15 +39,25 @@ import { supplementalMetricIds } from "@/lib/analysis-types";
 import { companyLogoUrl } from "@/lib/company-logo";
 import {
   defaultLanguage,
-  languageLabels,
+  LANGUAGE_STORAGE_KEY,
   localeForLanguage,
   normalizeLanguage,
-  supportedLanguages,
   uiCopy,
   type Language,
 } from "@/lib/i18n";
+import {
+  APP_ANALYSIS_REQUEST_EVENT,
+  APP_ANALYSIS_SETTINGS_CHANGE_EVENT,
+  APP_ANALYSIS_STATUS_EVENT,
+  APP_LANGUAGE_CHANGE_EVENT,
+  type AppAnalysisRequestDetail,
+  type AppAnalysisSettingsChangeDetail,
+  type AppAnalysisStatusDetail,
+  type AppLanguageChangeDetail,
+} from "@/lib/app-events";
 import { termDefinitions, termForLabel, type TermKey } from "@/lib/term-definitions";
 import { normalizeTicker } from "@/lib/ticker";
+import Image from "next/image";
 
 const metricIcons = {
   double: TrendingUp,
@@ -74,30 +81,11 @@ const supplementalMetricIcons = {
   fiftyTwoWeekRangePosition: BarChart3,
 } satisfies Record<SupplementalMetricId, typeof TrendingUp>;
 
-const LANGUAGE_STORAGE_KEY = "invest-rate.language.v1";
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v2";
 const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v1";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
 const MAX_STORED_SUPPLEMENTAL_RESULTS = 80;
-const METHODOLOGY_SCORING_PROFILES_URL =
-  "https://github.com/Wlad1slav/Q-GARP-Framework/blob/main/METHODOLOGY.md#3-scoring-profiles";
-
-const settingsPanelCopy = {
-  uk: {
-    title: "Налаштування",
-    sectorWeights: "Увімкнути ваги залежно від галузі",
-    supplementalMetricsTitle: "Додаткові метрики стоку",
-    methodologyTitle: "Методологія scoring profiles",
-  },
-  en: {
-    title: "Settings",
-    sectorWeights: "Enable industry-based weights",
-    supplementalMetricsTitle: "Supplemental stock metrics",
-    methodologyTitle: "Scoring profiles methodology",
-  },
-} satisfies Record<Language, { title: string; sectorWeights: string; supplementalMetricsTitle: string; methodologyTitle: string }>;
-
 const supplementalMetricsCopy = {
   uk: {
     ariaLabel: "Додаткові метрики стоку",
@@ -168,9 +156,9 @@ export default function Home() {
 
   const asOf = analysis?.asOf
     ? new Intl.DateTimeFormat(localeForLanguage(language), {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(analysis.asOf))
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(analysis.asOf))
     : "";
 
   const clearSupplementalMetrics = useCallback((metricIds: readonly SupplementalMetricId[] = supplementalMetricIds) => {
@@ -335,21 +323,30 @@ export default function Home() {
     didReadInitialUrl.current = true;
 
     const params = new URLSearchParams(window.location.search);
+    const storedSettings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
     const initialLanguage = normalizeLanguage(params.get("lang") ?? window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
     const initialTicker = params.get("ticker");
+    const initialUseSectorWeights = params.has(SECTOR_WEIGHTS_QUERY_PARAM)
+      ? parseSectorWeightsFlag(params.get(SECTOR_WEIGHTS_QUERY_PARAM))
+      : storedSettings.useSectorWeights;
+
     setLanguage(initialLanguage);
+    setUseSectorWeights(initialUseSectorWeights);
+    setSupplementalMetricSettings(storedSettings.supplementalMetrics);
     document.documentElement.lang = initialLanguage;
 
     if (!initialTicker) return;
 
-    const cleanTicker = initialTicker.toUpperCase();
+    const cleanTicker = normalizeTicker(initialTicker);
+    if (!cleanTicker) return;
+
     const timer = window.setTimeout(() => {
       setTicker(cleanTicker);
-      void loadAnalysis(cleanTicker, undefined, initialLanguage, useSectorWeights, supplementalMetricSettings);
+      void loadAnalysis(cleanTicker, undefined, initialLanguage, initialUseSectorWeights, storedSettings.supplementalMetrics);
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loadAnalysis, supplementalMetricSettings, useSectorWeights]);
+  }, [loadAnalysis]);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -360,50 +357,83 @@ export default function Home() {
     writeAnalysisSettings(APP_SETTINGS_STORAGE_KEY, { useSectorWeights, supplementalMetrics: supplementalMetricSettings });
   }, [supplementalMetricSettings, useSectorWeights]);
 
-  function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void loadAnalysis(ticker);
-  }
+  useEffect(() => {
+    function handleAnalysisRequest(event: Event) {
+      const detail = (event as CustomEvent<AppAnalysisRequestDetail>).detail;
+      const cleanTicker = normalizeTicker(detail?.ticker ?? "");
+      if (!cleanTicker) return;
 
-  function changeLanguage(nextLanguage: Language) {
-    if (nextLanguage === language) return;
-
-    setLanguage(nextLanguage);
-    const targetTicker = analysis?.symbol ?? lastTicker;
-    if (targetTicker) {
-      void loadAnalysis(targetTicker, undefined, nextLanguage);
-      return;
+      setTicker(cleanTicker);
+      setLanguage(detail.language);
+      setUseSectorWeights(detail.settings.useSectorWeights);
+      setSupplementalMetricSettings(detail.settings.supplementalMetrics);
+      document.documentElement.lang = detail.language;
+      void loadAnalysis(
+        cleanTicker,
+        undefined,
+        detail.language,
+        detail.settings.useSectorWeights,
+        detail.settings.supplementalMetrics,
+      );
     }
 
-    setError("");
-  }
+    window.addEventListener(APP_ANALYSIS_REQUEST_EVENT, handleAnalysisRequest);
+    return () => window.removeEventListener(APP_ANALYSIS_REQUEST_EVENT, handleAnalysisRequest);
+  }, [loadAnalysis]);
 
-  function changeUseSectorWeights(nextUseSectorWeights: boolean) {
-    if (nextUseSectorWeights === useSectorWeights) return;
+  useEffect(() => {
+    function handleLanguageChange(event: Event) {
+      const detail = (event as CustomEvent<AppLanguageChangeDetail>).detail;
+      const nextLanguage = normalizeLanguage(detail?.language);
+      setLanguage(nextLanguage);
+      document.documentElement.lang = nextLanguage;
 
-    setUseSectorWeights(nextUseSectorWeights);
-    const targetTicker = analysis?.symbol ?? lastTicker;
-    if (targetTicker) {
-      void loadAnalysis(targetTicker, undefined, language, nextUseSectorWeights, supplementalMetricSettings);
-    }
-  }
+      const targetTicker = analysis?.symbol ?? lastTicker;
+      if (targetTicker) {
+        void loadAnalysis(targetTicker, undefined, nextLanguage);
+        return;
+      }
 
-  function changeSupplementalMetric(metricId: SupplementalMetricId, enabled: boolean) {
-    if (enabled === supplementalMetricSettings[metricId]) return;
-
-    const nextSettings = {
-      ...supplementalMetricSettings,
-      [metricId]: enabled,
-    };
-    setSupplementalMetricSettings(nextSettings);
-    const targetTicker = analysis?.symbol ?? lastTicker;
-    if (enabled && targetTicker) {
-      void loadSupplementalMetric(metricId, targetTicker, language);
-      return;
+      setError("");
     }
 
-    clearSupplementalMetrics([metricId]);
-  }
+    window.addEventListener(APP_LANGUAGE_CHANGE_EVENT, handleLanguageChange);
+    return () => window.removeEventListener(APP_LANGUAGE_CHANGE_EVENT, handleLanguageChange);
+  }, [analysis?.symbol, lastTicker, loadAnalysis]);
+
+  useEffect(() => {
+    function handleSettingsChange(event: Event) {
+      const detail = (event as CustomEvent<AppAnalysisSettingsChangeDetail>).detail;
+      const nextSettings = detail?.settings ?? readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
+      setUseSectorWeights(nextSettings.useSectorWeights);
+      setSupplementalMetricSettings(nextSettings.supplementalMetrics);
+
+      const targetTicker = analysis?.symbol ?? lastTicker;
+      if (targetTicker) {
+        void loadAnalysis(
+          targetTicker,
+          undefined,
+          language,
+          nextSettings.useSectorWeights,
+          nextSettings.supplementalMetrics,
+        );
+      }
+    }
+
+    window.addEventListener(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, handleSettingsChange);
+    return () => window.removeEventListener(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, handleSettingsChange);
+  }, [analysis?.symbol, language, lastTicker, loadAnalysis]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent<AppAnalysisStatusDetail>(APP_ANALYSIS_STATUS_EVENT, {
+        detail: {
+          lastTicker: analysis?.symbol ?? lastTicker,
+          loading,
+        },
+      }),
+    );
+  }, [analysis?.symbol, lastTicker, loading]);
 
   function applyPeerGroup() {
     const targetTicker = analysis?.symbol ?? lastTicker ?? ticker;
@@ -432,329 +462,181 @@ export default function Home() {
   }
 
   return (
-    <>
-      <SettingsModule
-        language={language}
-        supplementalMetricSettings={supplementalMetricSettings}
-        useSectorWeights={useSectorWeights}
-        onSupplementalMetricChange={changeSupplementalMetric}
-        onUseSectorWeightsChange={changeUseSectorWeights}
-      />
-
-      <main className="appShell withSettings">
-      <header className="topBar">
-        <div className="brand">
-          <div className="brandMark" aria-hidden="true">
-            <BarChart3 size={23} />
-          </div>
-          <div className="brandText">
-            <h1>{t.brandTitle}</h1>
-            <p>{t.brandSubtitle}</p>
-          </div>
-        </div>
-
-        <div className="topActions">
-          <Link className="githubLink" href="/sp500-top" aria-label="S&P 500 Top">
-            <BarChart3 size={17} />
-            <span>S&P 500 Top</span>
-          </Link>
-
-          <a
-            className="githubLink"
-            href="https://github.com/Wlad1slav/Q-GARP-Framework"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Wlad1slav/Q-GARP-Framework on GitHub"
-          >
-            <GitHubIcon size={17} />
-            <span>Wlad1slav/Q-GARP-Framework</span>
-          </a>
-
-          <form className="searchForm" onSubmit={onSubmit}>
-            <input
-              className="tickerInput"
-              value={ticker}
-              onChange={(event) => setTicker(event.target.value.toUpperCase())}
-              placeholder="AAPL"
-              aria-label={t.aria.ticker}
-              maxLength={16}
-            />
-            <button className="primaryButton" disabled={loading || !ticker.trim()} title={t.actions.analyze} type="submit">
-              {loading ? <Loader2 className="spinning" size={18} /> : <Search size={18} />}
-              <span>{t.actions.analyze}</span>
-            </button>
-            <button
-              className="iconButton secondaryButton"
-              disabled={loading || !lastTicker}
-              title={t.actions.refresh}
-              type="button"
-              onClick={() => void loadAnalysis(lastTicker)}
-            >
-              <RefreshCw size={18} />
-            </button>
-            <div className="languageToggle" role="group" aria-label={t.aria.language}>
-              {supportedLanguages.map((nextLanguage) => (
-                <button
-                  aria-pressed={language === nextLanguage}
-                  className={`languageOption ${language === nextLanguage ? "active" : ""}`}
-                  disabled={loading && language !== nextLanguage}
-                  key={nextLanguage}
-                  type="button"
-                  onClick={() => changeLanguage(nextLanguage)}
-                >
-                  {languageLabels[nextLanguage]}
-                </button>
-              ))}
+    <main className="appShell">
+        {analysis ? (
+          <>
+            <div className="scoreCompany">
+              <span className="scoreCompanyLogo" aria-hidden="true" key={analysis.symbol}>
+                <Image
+                  alt=""
+                  loading="lazy"
+                  width={32}
+                  height={32}
+                  src={companyLogoUrl(analysis.symbol)}
+                  onError={(event) => {
+                    event.currentTarget.parentElement?.setAttribute("data-hidden", "true");
+                  }}
+                />
+              </span>
+              <h2>
+                {analysis.symbol} · {analysis.name}
+              </h2>
             </div>
-          </form>
-        </div>
-      </header>
 
-      {analysis ? (
-        <>
-          <section className="summaryBand" aria-label={t.aria.summary}>
-            <div className="scoreBlock">
-              <div className="scoreRing" style={{ "--score": analysis.score } as React.CSSProperties}>
-                <strong>{analysis.score}</strong>
-              </div>
-              <div className="scoreCopy">
-                <h2>{analysis.label}</h2>
-                <div className="scoreCompany">
-                  <span className="scoreCompanyLogo" aria-hidden="true" key={analysis.symbol}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      alt=""
-                      loading="lazy"
-                      src={companyLogoUrl(analysis.symbol)}
-                      onError={(event) => {
-                        event.currentTarget.parentElement?.setAttribute("data-hidden", "true");
-                      }}
-                    />
-                  </span>
-                  <p>
-                    {analysis.symbol} · {analysis.name}
-                  </p>
+            <section className="summaryBand" aria-label={t.aria.summary}>
+
+              <div className="scoreBlock">
+                <div className="scoreRing" style={{ "--score": analysis.score } as React.CSSProperties}>
+                  <strong>{analysis.score}</strong>
+                </div>
+                <div className="scoreCopy">
+                  <p>{t.scoreLabels[analysis.tone]}</p>
+                  <p className="score">{analysis.score} / 100</p>
                 </div>
               </div>
-            </div>
 
-            <div className="companyGrid">
-              <Fact label={t.facts.price} language={language} value={analysis.price} />
-              <Fact label={t.facts.marketCap} language={language} value={analysis.marketCap} termKey="marketCap" />
-              <Fact label={t.facts.sector} language={language} value={analysis.sector ?? analysis.industry} />
-              <Fact label={t.facts.updated} language={language} value={asOf} />
-            </div>
-          </section>
+              <div className="companyGrid">
+                <Fact label={t.facts.price} language={language} value={analysis.price} />
+                <Fact label={t.facts.marketCap} language={language} value={analysis.marketCap} termKey="marketCap" />
+                <Fact label={t.facts.sector} language={language} value={analysis.sector ?? analysis.industry} />
+                <Fact label={t.facts.updated} language={language} value={asOf} />
+              </div>
+            </section>
 
-          <div className="statusRow">
-            <span className="miniChip">
-              <BadgeDollarSign size={15} />
-              {analysis.currency ?? t.currencyUnavailable}
-            </span>
-            <span className="miniChip">
-              <ShieldCheck size={15} />
-              {t.scoreMeta.confidence}: {analysis.confidence}/100
-            </span>
-            <span className="miniChip">
-              <Calculator size={15} />
-              {t.scoreMeta.rawScore}: {analysis.rawScore}/100
-            </span>
-            {analysis.riskPenalty ? (
+            <div className="statusRow">
               <span className="miniChip">
-                <CircleAlert size={15} />
-                {t.scoreMeta.riskPenalty}: -{analysis.riskPenalty}
+                <BadgeDollarSign size={15} />
+                {analysis.currency ?? t.currencyUnavailable}
               </span>
-            ) : null}
-            <span className="miniChip">
-              <BarChart3 size={15} />
-              {t.scoreMeta.profile}: {analysis.scoringProfile}
-            </span>
-            <span className="miniChip">
-              <BarChart3 size={15} />
-              <TermLabel label={t.peers.label} language={language} termKey="peers" />:{" "}
-              {analysis.peerSymbols.length ? analysis.peerSymbols.join(", ") : t.notAvailable}
-            </span>
-            {analysis.exchange ? (
               <span className="miniChip">
-                <TrendingUp size={15} />
-                {analysis.exchange}
+                <ShieldCheck size={15} />
+                {t.scoreMeta.confidence}: {analysis.confidence}/100
               </span>
-            ) : null}
-          </div>
-
-          {enabledSupplementalMetricIds.length ? (
-            <SupplementalMetricsPanel
-              enabledMetricIds={enabledSupplementalMetricIds}
-              errors={supplementalErrors}
-              language={language}
-              loading={supplementalLoading}
-              metrics={supplementalMetrics}
-              notes={supplementalNotes}
-            />
-          ) : null}
-
-          <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
-            <div className="peerEditorText">
-              <span className={`peerSourceBadge ${analysis.peerSource}`}>
-                <UsersRound size={15} />
-                {analysis.peerSource === "manual"
-                  ? t.peers.manualBadge
-                  : analysis.peerSource === "actual"
-                    ? t.peers.actualBadge
-                    : t.peers.recommendedBadge}
+              <span className="miniChip">
+                <Calculator size={15} />
+                {t.scoreMeta.rawScore}: {analysis.rawScore}/100
               </span>
-              <p>
-                {analysis.peerSource === "manual"
-                  ? t.peers.manualText
-                  : analysis.peerSource === "actual"
-                    ? t.peers.actualText
-                    : t.peers.recommendedText}
-              </p>
-              {analysis.recommendedPeerSymbols.length ? (
-                <small>
-                  {t.peers.recommended}: {analysis.recommendedPeerSymbols.join(", ")}
-                </small>
+              {analysis.riskPenalty ? (
+                <span className="miniChip">
+                  <CircleAlert size={15} />
+                  {t.scoreMeta.riskPenalty}: -{analysis.riskPenalty}
+                </span>
+              ) : null}
+              <span className="miniChip">
+                <BarChart3 size={15} />
+                {t.scoreMeta.profile}: {analysis.scoringProfile}
+              </span>
+              <span className="miniChip">
+                <BarChart3 size={15} />
+                <TermLabel label={t.peers.label} language={language} termKey="peers" />:{" "}
+                {analysis.peerSymbols.length ? analysis.peerSymbols.join(", ") : t.notAvailable}
+              </span>
+              {analysis.exchange ? (
+                <span className="miniChip">
+                  <TrendingUp size={15} />
+                  {analysis.exchange}
+                </span>
               ) : null}
             </div>
 
-            <div className="peerControls">
-              <input
-                className="peerInput"
-                value={peerInput}
-                onChange={(event) => setPeerInput(event.target.value.toUpperCase())}
-                placeholder="MSFT, GOOGL, AMZN"
-                aria-label={t.aria.competitors}
-              />
-              <button
-                className="peerButton"
-                disabled={loading || !normalizePeerInput(peerInput, analysis.symbol).length}
-                title={t.peers.applyTitle}
-                type="button"
-                onClick={applyPeerGroup}
-              >
-                <Save size={16} />
-                <span>{t.actions.apply}</span>
-              </button>
-              <button
-                className="peerButton prompt"
-                disabled={loading}
-                title={t.peers.promptTitle}
-                type="button"
-                onClick={() => void copyPeerPrompt()}
-              >
-                <ClipboardCopy size={16} />
-                <span>{promptCopied ? t.copied : t.prompt}</span>
-              </button>
-              <button
-                className="peerButton reset"
-                disabled={loading}
-                title={t.peers.resetTitle}
-                type="button"
-                onClick={resetPeerGroup}
-              >
-                <RotateCcw size={16} />
-                <span>{t.actions.reset}</span>
-              </button>
-            </div>
-          </section>
-
-          <section className="metricGrid" aria-label={t.aria.metrics}>
-            {analysis.indicators.map((indicator) => (
-              <MetricCard
-                indicator={indicator}
-                key={indicator.id}
+            {enabledSupplementalMetricIds.length ? (
+              <SupplementalMetricsPanel
+                enabledMetricIds={enabledSupplementalMetricIds}
+                errors={supplementalErrors}
                 language={language}
-                scoreAria={t.aria.score}
-                toneLabels={t.toneLabels}
+                loading={supplementalLoading}
+                metrics={supplementalMetrics}
+                notes={supplementalNotes}
               />
-            ))}
-          </section>
+            ) : null}
 
-          <p className="finePrint">{analysis.dataNotes.join(" ")}</p>
-        </>
-      ) : loading ? (
-        <StatePanel icon={<Loader2 size={34} />} title={t.states.loadingTitle} text={t.states.loadingText} type="loading" />
-      ) : error ? (
-        <StatePanel icon={<AlertTriangle size={34} />} title={t.states.errorTitle} text={error} type="error" />
-      ) : (
-        <StatePanel icon={<Search size={34} />} title={t.states.emptyTitle} text={t.states.emptyText} type="empty" />
-      )}
-      </main>
-    </>
-  );
-}
+            <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
+              <div className="peerEditorText">
+                <span className={`peerSourceBadge ${analysis.peerSource}`}>
+                  <UsersRound size={15} />
+                  {analysis.peerSource === "manual"
+                    ? t.peers.manualBadge
+                    : analysis.peerSource === "actual"
+                      ? t.peers.actualBadge
+                      : t.peers.recommendedBadge}
+                </span>
+                <p>
+                  {analysis.peerSource === "manual"
+                    ? t.peers.manualText
+                    : analysis.peerSource === "actual"
+                      ? t.peers.actualText
+                      : t.peers.recommendedText}
+                </p>
+                {analysis.recommendedPeerSymbols.length ? (
+                  <small>
+                    {t.peers.recommended}: {analysis.recommendedPeerSymbols.join(", ")}
+                  </small>
+                ) : null}
+              </div>
 
-function SettingsModule({
-  language,
-  supplementalMetricSettings,
-  useSectorWeights,
-  onSupplementalMetricChange,
-  onUseSectorWeightsChange,
-}: {
-  language: Language;
-  supplementalMetricSettings: SupplementalMetricSettings;
-  useSectorWeights: boolean;
-  onSupplementalMetricChange: (metricId: SupplementalMetricId, enabled: boolean) => void;
-  onUseSectorWeightsChange: (enabled: boolean) => void;
-}) {
-  const t = settingsPanelCopy[language];
-  const supplementalCopy = supplementalMetricsCopy[language];
-  const [open, setOpen] = useState(false);
-  const menuId = "app-settings-menu";
+              <div className="peerControls">
+                <input
+                  className="peerInput"
+                  value={peerInput}
+                  onChange={(event) => setPeerInput(event.target.value.toUpperCase())}
+                  placeholder="MSFT, GOOGL, AMZN"
+                  aria-label={t.aria.competitors}
+                />
+                <button
+                  className="peerButton"
+                  disabled={loading || !normalizePeerInput(peerInput, analysis.symbol).length}
+                  title={t.peers.applyTitle}
+                  type="button"
+                  onClick={applyPeerGroup}
+                >
+                  <Save size={16} />
+                  <span>{t.actions.apply}</span>
+                </button>
+                <button
+                  className="peerButton prompt"
+                  disabled={loading}
+                  title={t.peers.promptTitle}
+                  type="button"
+                  onClick={() => void copyPeerPrompt()}
+                >
+                  <ClipboardCopy size={16} />
+                  <span>{promptCopied ? t.copied : t.prompt}</span>
+                </button>
+                <button
+                  className="peerButton reset"
+                  disabled={loading}
+                  title={t.peers.resetTitle}
+                  type="button"
+                  onClick={resetPeerGroup}
+                >
+                  <RotateCcw size={16} />
+                  <span>{t.actions.reset}</span>
+                </button>
+              </div>
+            </section>
 
-  return (
-    <aside className="settingsModule" aria-label={t.title}>
-      <button
-        className="settingsMenuButton"
-        type="button"
-        aria-controls={menuId}
-        aria-expanded={open}
-        aria-label={t.title}
-        title={t.title}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <Settings size={16} />
-      </button>
-      <div className="settingsDropdown" hidden={!open} id={menuId}>
-        <div className="settingsModuleHeader">
-          <Settings size={16} />
-          <strong>{t.title}</strong>
-        </div>
-        <div className="settingsOption">
-          <label className="settingsToggleLabel">
-            <input
-              checked={useSectorWeights}
-              type="checkbox"
-              onChange={(event) => onUseSectorWeightsChange(event.currentTarget.checked)}
-            />
-            <span className="settingsSwitch" aria-hidden="true" />
-            <span>{t.sectorWeights}</span>
-          </label>
-          <div className="settingsSectionLabel">{t.supplementalMetricsTitle}</div>
-          {supplementalMetricIds.map((metricId) => (
-            <label className="settingsToggleLabel" key={metricId}>
-              <input
-                checked={supplementalMetricSettings[metricId]}
-                type="checkbox"
-                onChange={(event) => onSupplementalMetricChange(metricId, event.currentTarget.checked)}
-              />
-              <span className="settingsSwitch" aria-hidden="true" />
-              <span>{supplementalCopy.metrics[metricId]}</span>
-            </label>
-          ))}
-          <a
-            className="settingsHelpLink"
-            href={METHODOLOGY_SCORING_PROFILES_URL}
-            target="_blank"
-            rel="noreferrer"
-            title={t.methodologyTitle}
-          >
-            <span>METHODOLOGY.md</span>
-            <ExternalLink size={12} />
-          </a>
-        </div>
-      </div>
-    </aside>
+            <section className="metricGrid" aria-label={t.aria.metrics}>
+              {analysis.indicators.map((indicator) => (
+                <MetricCard
+                  indicator={indicator}
+                  key={indicator.id}
+                  language={language}
+                  scoreAria={t.aria.score}
+                  toneLabels={t.toneLabels}
+                />
+              ))}
+            </section>
+
+            <p className="finePrint">{analysis.dataNotes.join(" ")}</p>
+          </>
+        ) : loading ? (
+          <StatePanel icon={<Loader2 size={34} />} title={t.states.loadingTitle} text={t.states.loadingText} type="loading" />
+        ) : error ? (
+          <StatePanel icon={<AlertTriangle size={34} />} title={t.states.errorTitle} text={error} type="error" />
+        ) : (
+          <StatePanel icon={<Search size={34} />} title={t.states.emptyTitle} text={t.states.emptyText} type="empty" />
+        )}
+    </main>
   );
 }
 
@@ -930,14 +812,6 @@ function StatePanel({
         <p>{text}</p>
       </div>
     </section>
-  );
-}
-
-function GitHubIcon({ size }: { size: number }) {
-  return (
-    <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
-      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-    </svg>
   );
 }
 
