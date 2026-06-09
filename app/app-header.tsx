@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, ExternalLink, Loader2, RefreshCw, Search, Settings } from "lucide-react";
+import { BarChart3, ExternalLink, Loader2, Menu, RefreshCw, Search, Settings, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,6 +51,8 @@ const headerCopy = {
   },
 } satisfies Record<Language, { menu: string; sp500Top: string; methodology: string; github: string }>;
 
+type HeaderCopy = (typeof headerCopy)[Language];
+
 const settingsPanelCopy = {
   uk: {
     title: "Налаштування",
@@ -87,12 +89,31 @@ export function AppHeader() {
   const [ticker, setTicker] = useState(readInitialHeaderTicker);
   const [lastTicker, setLastTicker] = useState(readInitialHeaderTicker);
   const [loading, setLoading] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [useSectorWeights, setUseSectorWeights] = useState(() => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights);
   const [supplementalMetricSettings, setSupplementalMetricSettings] = useState(
     () => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).supplementalMetrics,
   );
   const t = uiCopy[language];
   const header = headerCopy[language];
+  const mobileMenuId = "app-mobile-menu";
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -198,20 +219,7 @@ export function AppHeader() {
             </div>
           </Link>
 
-          <nav className="headerNav" aria-label={header.menu}>
-            <Link className="navLink" href="/sp500-top">
-              <BarChart3 size={16} />
-              <span>{header.sp500Top}</span>
-            </Link>
-            <a className="navLink" href={METHODOLOGY_SCORING_PROFILES_URL} target="_blank" rel="noreferrer">
-              <ExternalLink size={16} />
-              <span>{header.methodology}</span>
-            </a>
-            <a className="navLink" href="https://github.com/Wlad1slav/Q-GARP-Framework" target="_blank" rel="noreferrer">
-              <GitHubIcon size={16} />
-              <span>{header.github}</span>
-            </a>
-          </nav>
+          <HeaderNavLinks ariaLabel={header.menu} className="headerNav desktopHeaderNav" copy={header} />
         </div>
 
         <div className="headerTools">
@@ -239,29 +247,139 @@ export function AppHeader() {
             </button>
           </form>
 
-          <HeaderSettingsModule
-            language={language}
-            supplementalMetricSettings={supplementalMetricSettings}
-            useSectorWeights={useSectorWeights}
-            onSupplementalMetricChange={changeSupplementalMetric}
-            onUseSectorWeightsChange={changeUseSectorWeights}
-          />
-          <div className="languageToggle" role="group" aria-label={t.aria.language}>
-            {supportedLanguages.map((nextLanguage) => (
-              <button
-                aria-pressed={language === nextLanguage}
-                className={`languageOption ${language === nextLanguage ? "active" : ""}`}
-                disabled={loading && language !== nextLanguage}
-                key={nextLanguage}
-                type="button"
-                onClick={() => changeLanguage(nextLanguage)}
-              >
-                {languageLabels[nextLanguage]}
-              </button>
-            ))}
+          <div className="desktopHeaderControls">
+            <HeaderSettingsModule
+              language={language}
+              menuId="app-settings-menu"
+              supplementalMetricSettings={supplementalMetricSettings}
+              useSectorWeights={useSectorWeights}
+              onSupplementalMetricChange={changeSupplementalMetric}
+              onUseSectorWeightsChange={changeUseSectorWeights}
+            />
+            <LanguageToggle
+              ariaLabel={t.aria.language}
+              language={language}
+              loading={loading}
+              onLanguageChange={changeLanguage}
+            />
           </div>
+          <button
+            className="iconButton secondaryButton mobileMenuButton"
+            type="button"
+            aria-controls={mobileMenuId}
+            aria-expanded={mobileMenuOpen}
+            aria-label={header.menu}
+            title={header.menu}
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
         </div>
       </header>
+
+      {mobileMenuOpen ? (
+        <>
+          <div className="mobileDrawerBackdrop" onClick={() => setMobileMenuOpen(false)} />
+          <aside className="mobileDrawer" id={mobileMenuId} role="dialog" aria-modal="true" aria-label={header.menu}>
+            <div className="mobileDrawerHeader">
+              <strong>{header.menu}</strong>
+              <button
+                className="iconButton secondaryButton mobileDrawerClose"
+                type="button"
+                aria-label={header.menu}
+                title={header.menu}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <HeaderNavLinks
+              ariaLabel={header.menu}
+              className="mobileDrawerNav"
+              copy={header}
+              onNavigate={() => setMobileMenuOpen(false)}
+            />
+            <div className="mobileDrawerControls">
+              <section className="mobileDrawerSettings" aria-label={settingsPanelCopy[language].title}>
+                <SettingsPanelContent
+                  language={language}
+                  supplementalMetricSettings={supplementalMetricSettings}
+                  useSectorWeights={useSectorWeights}
+                  onSupplementalMetricChange={changeSupplementalMetric}
+                  onUseSectorWeightsChange={changeUseSectorWeights}
+                />
+              </section>
+              <LanguageToggle
+                ariaLabel={t.aria.language}
+                className="mobileLanguageToggle"
+                language={language}
+                loading={loading}
+                onLanguageChange={changeLanguage}
+              />
+            </div>
+          </aside>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function HeaderNavLinks({
+  ariaLabel,
+  className,
+  copy,
+  onNavigate,
+}: {
+  ariaLabel: string;
+  className: string;
+  copy: HeaderCopy;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav className={className} aria-label={ariaLabel}>
+      <Link className="navLink" href="/sp500-top" onClick={onNavigate}>
+        <BarChart3 size={16} />
+        <span>{copy.sp500Top}</span>
+      </Link>
+      <a className="navLink" href={METHODOLOGY_SCORING_PROFILES_URL} target="_blank" rel="noreferrer" onClick={onNavigate}>
+        <ExternalLink size={16} />
+        <span>{copy.methodology}</span>
+      </a>
+      <a className="navLink" href="https://github.com/Wlad1slav/Q-GARP-Framework" target="_blank" rel="noreferrer" onClick={onNavigate}>
+        <GitHubIcon size={16} />
+        <span>{copy.github}</span>
+      </a>
+    </nav>
+  );
+}
+
+function LanguageToggle({
+  ariaLabel,
+  className = "",
+  language,
+  loading,
+  onLanguageChange,
+}: {
+  ariaLabel: string;
+  className?: string;
+  language: Language;
+  loading: boolean;
+  onLanguageChange: (language: Language) => void;
+}) {
+  return (
+    <div className={`languageToggle ${className}`.trim()} role="group" aria-label={ariaLabel}>
+      {supportedLanguages.map((nextLanguage) => (
+        <button
+          aria-pressed={language === nextLanguage}
+          className={`languageOption ${language === nextLanguage ? "active" : ""}`}
+          disabled={loading && language !== nextLanguage}
+          key={nextLanguage}
+          type="button"
+          onClick={() => onLanguageChange(nextLanguage)}
+        >
+          {languageLabels[nextLanguage]}
+        </button>
+      ))}
     </div>
   );
 }
@@ -282,21 +400,21 @@ function readInitialHeaderTicker() {
 
 function HeaderSettingsModule({
   language,
+  menuId,
   supplementalMetricSettings,
   useSectorWeights,
   onSupplementalMetricChange,
   onUseSectorWeightsChange,
 }: {
   language: Language;
+  menuId: string;
   supplementalMetricSettings: SupplementalMetricSettings;
   useSectorWeights: boolean;
   onSupplementalMetricChange: (metricId: SupplementalMetricId, enabled: boolean) => void;
   onUseSectorWeightsChange: (enabled: boolean) => void;
 }) {
   const t = settingsPanelCopy[language];
-  const supplementalCopy = supplementalMetricsCopy[language];
   const [open, setOpen] = useState(false);
-  const menuId = "app-settings-menu";
 
   return (
     <aside className="settingsModule settingsModuleInline" aria-label={t.title}>
@@ -312,45 +430,74 @@ function HeaderSettingsModule({
         <Settings size={16} />
       </button>
       <div className="settingsDropdown" hidden={!open} id={menuId}>
-        <div className="settingsModuleHeader">
-          <Settings size={16} />
-          <strong>{t.title}</strong>
-        </div>
-        <div className="settingsOption">
-          <label className="settingsToggleLabel">
-            <input
-              checked={useSectorWeights}
-              type="checkbox"
-              onChange={(event) => onUseSectorWeightsChange(event.currentTarget.checked)}
-            />
-            <span className="settingsSwitch" aria-hidden="true" />
-            <span>{t.sectorWeights}</span>
-          </label>
-          <div className="settingsSectionLabel">{t.supplementalMetricsTitle}</div>
-          {supplementalMetricIds.map((metricId) => (
-            <label className="settingsToggleLabel" key={metricId}>
-              <input
-                checked={supplementalMetricSettings[metricId]}
-                type="checkbox"
-                onChange={(event) => onSupplementalMetricChange(metricId, event.currentTarget.checked)}
-              />
-              <span className="settingsSwitch" aria-hidden="true" />
-              <span>{supplementalCopy[metricId]}</span>
-            </label>
-          ))}
-          <a
-            className="settingsHelpLink"
-            href={METHODOLOGY_SCORING_PROFILES_URL}
-            target="_blank"
-            rel="noreferrer"
-            title={t.methodologyTitle}
-          >
-            <span>METHODOLOGY.md</span>
-            <ExternalLink size={12} />
-          </a>
-        </div>
+        <SettingsPanelContent
+          language={language}
+          supplementalMetricSettings={supplementalMetricSettings}
+          useSectorWeights={useSectorWeights}
+          onSupplementalMetricChange={onSupplementalMetricChange}
+          onUseSectorWeightsChange={onUseSectorWeightsChange}
+        />
       </div>
     </aside>
+  );
+}
+
+function SettingsPanelContent({
+  language,
+  supplementalMetricSettings,
+  useSectorWeights,
+  onSupplementalMetricChange,
+  onUseSectorWeightsChange,
+}: {
+  language: Language;
+  supplementalMetricSettings: SupplementalMetricSettings;
+  useSectorWeights: boolean;
+  onSupplementalMetricChange: (metricId: SupplementalMetricId, enabled: boolean) => void;
+  onUseSectorWeightsChange: (enabled: boolean) => void;
+}) {
+  const t = settingsPanelCopy[language];
+  const supplementalCopy = supplementalMetricsCopy[language];
+
+  return (
+    <>
+      <div className="settingsModuleHeader">
+        <Settings size={16} />
+        <strong>{t.title}</strong>
+      </div>
+      <div className="settingsOption">
+        <label className="settingsToggleLabel">
+          <input
+            checked={useSectorWeights}
+            type="checkbox"
+            onChange={(event) => onUseSectorWeightsChange(event.currentTarget.checked)}
+          />
+          <span className="settingsSwitch" aria-hidden="true" />
+          <span>{t.sectorWeights}</span>
+        </label>
+        <div className="settingsSectionLabel">{t.supplementalMetricsTitle}</div>
+        {supplementalMetricIds.map((metricId) => (
+          <label className="settingsToggleLabel" key={metricId}>
+            <input
+              checked={supplementalMetricSettings[metricId]}
+              type="checkbox"
+              onChange={(event) => onSupplementalMetricChange(metricId, event.currentTarget.checked)}
+            />
+            <span className="settingsSwitch" aria-hidden="true" />
+            <span>{supplementalCopy[metricId]}</span>
+          </label>
+        ))}
+        <a
+          className="settingsHelpLink"
+          href={METHODOLOGY_SCORING_PROFILES_URL}
+          target="_blank"
+          rel="noreferrer"
+          title={t.methodologyTitle}
+        >
+          <span>METHODOLOGY.md</span>
+          <ExternalLink size={12} />
+        </a>
+      </div>
+    </>
   );
 }
 

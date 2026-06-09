@@ -272,7 +272,7 @@ button:disabled {
 }
 
 .appHeader {
-  grid-template-columns: minmax(420px, 1fr) minmax(360px, 660px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 22px;
   min-height: 74px;
   padding-bottom: 18px;
@@ -414,16 +414,14 @@ button:disabled {
 }
 
 .searchForm {
-  gap: 8px;
-  /* width: 100%; */
   display: flex;
   gap: 5px;
   min-width: 0;
 }
 
 .headerSearch {
-  grid-template-columns: minmax(180px, 1fr) auto auto;
   justify-self: center;
+  width: min(420px, 100%);
   max-width: 660px;
   margin-right: 5px;
 }
@@ -436,8 +434,20 @@ button:disabled {
   gap: 8px;
 }
 
+.desktopHeaderControls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobileMenuButton {
+  display: none;
+  flex: 0 0 auto;
+}
+
 .tickerInput {
-  /* width: 100%; */
+  flex: 1 1 160px;
   min-width: 0;
   height: 46px;
   padding: 0 14px;
@@ -534,6 +544,93 @@ button:disabled {
 .languageOption:focus-visible {
   outline: 3px solid rgba(37, 111, 186, 0.18);
   outline-offset: -3px;
+}
+
+.mobileDrawerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(12, 17, 22, 0.44);
+  backdrop-filter: blur(2px);
+}
+
+.mobileDrawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 100;
+  display: grid;
+  width: min(370px, calc(100vw - 24px));
+  height: 100dvh;
+  max-width: 100%;
+  max-height: 100dvh;
+  align-content: start;
+  gap: 16px;
+  padding: 16px;
+  overflow: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -20px 0 60px rgba(12, 17, 22, 0.2);
+  animation: drawerSlideIn 160ms ease-out;
+}
+
+.mobileDrawerHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobileDrawerHeader strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.mobileDrawerClose {
+  flex: 0 0 auto;
+}
+
+.mobileDrawerNav {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mobileDrawerNav .navLink {
+  min-height: 44px;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fbfcfd;
+  border-color: var(--line);
+}
+
+.mobileDrawerControls {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.mobileDrawerSettings {
+  min-width: 0;
+  padding: 12px;
+  background: #fbfcfd;
+  border: 1px solid var(--line);
+}
+
+.mobileLanguageToggle {
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@keyframes drawerSlideIn {
+  from {
+    transform: translateX(100%);
+  }
 }
 
 .summaryBand {
@@ -2169,6 +2266,8 @@ button:disabled {
   }
 
   .appHeader {
+    grid-template-columns: 1fr;
+    align-items: stretch;
     gap: 14px;
   }
 
@@ -2177,8 +2276,27 @@ button:disabled {
     justify-self: stretch;
   }
 
+  .desktopHeaderNav,
+  .desktopHeaderControls {
+    display: none;
+  }
+
   .headerTools {
-    justify-content: space-between;
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+    justify-content: normal;
+  }
+
+  .headerSearch {
+    grid-column: auto;
+    width: 100%;
+    max-width: none;
+    margin-right: 0;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex;
   }
 
   .companyGrid {
@@ -2242,27 +2360,23 @@ button:disabled {
     font-size: 0.86rem;
   }
 
-  .searchForm {
-    grid-template-columns: 1fr 46px 46px;
+  .mobileDrawer {
+    width: min(340px, calc(100vw - 16px));
+    padding: 14px;
   }
 
-  .languageToggle {
-    grid-column: 1 / -1;
-    justify-self: end;
+  .mobileLanguageToggle {
+    grid-column: auto;
+    justify-self: stretch;
   }
 
-  .settingsModuleInline .settingsDropdown {
-    right: auto;
-    left: 0;
-  }
-
-  .primaryButton {
+  .headerSearch .primaryButton {
     width: 46px;
     min-width: 46px;
     padding: 0;
   }
 
-  .primaryButton span {
+  .headerSearch .primaryButton span {
     position: absolute;
     width: 1px;
     height: 1px;
