@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getActualPeersSourceUrl } from "@/lib/actual-peers";
 import { getSp500Constituents } from "@/lib/sp500";
 
 export const runtime = "nodejs";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const result = await getSp500Constituents();
-    return NextResponse.json(result, {
+    return NextResponse.json({ ...result, actualPeersSourceUrl: getActualPeersSourceUrl() }, {
       headers: {
         "Cache-Control": "public, max-age=86400",
       },

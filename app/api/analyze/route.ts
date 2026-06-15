@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ANALYSIS_CACHE_TTL_SECONDS, getCachedAnalysis } from "@/lib/analysis-service";
 import { parseSectorWeightsFlag, SECTOR_WEIGHTS_QUERY_PARAM } from "@/lib/analysis-settings";
+import { getActualPeersSourceUrl } from "@/lib/actual-peers";
 import { analysisCopy, normalizeLanguage } from "@/lib/i18n";
 
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
       },
     });
 
-    return NextResponse.json(result, {
+    return NextResponse.json({ ...result, actualPeersSourceUrl: getActualPeersSourceUrl() }, {
       headers: {
         "Cache-Control": `private, max-age=${ANALYSIS_CACHE_TTL_SECONDS}, stale-while-revalidate=600`,
         "X-Analysis-Cache": cached ? "hit" : "miss",

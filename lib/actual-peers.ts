@@ -12,8 +12,12 @@ type ActualPeersCache = {
 let actualPeersCache: ActualPeersCache | undefined;
 let actualPeersRequest: Promise<Map<string, string[]>> | undefined;
 
+export function getActualPeersSourceUrl() {
+  return process.env.ACTUAL_PEERS?.trim() || undefined;
+}
+
 export async function getActualPeerSymbols(inputTicker: string) {
-  const sourceUrl = process.env.ACTUAL_PEERS?.trim();
+  const sourceUrl = getActualPeersSourceUrl();
   if (!sourceUrl) return [];
 
   const groups = await loadActualPeerGroups(sourceUrl);

@@ -53,6 +53,7 @@ export interface AnalysisResult {
   recommendedPeerSymbols: string[];
   peerSource: PeerSource;
   dataNotes: string[];
+  actualPeersSourceUrl?: string;
 }
 
 export interface SupplementalMetricResult {

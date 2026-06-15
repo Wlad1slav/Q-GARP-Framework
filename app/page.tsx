@@ -57,6 +57,7 @@ import {
   type AppLanguageChangeDetail,
 } from "@/lib/app-events";
 import { readBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
+import { JoinedTextWithActualPeersLinks, TextWithActualPeersLink } from "@/lib/actual-peers-link";
 import { termDefinitions, termForLabel, type TermKey } from "@/lib/term-definitions";
 import { normalizeTicker } from "@/lib/ticker";
 import Image from "next/image";
@@ -84,7 +85,7 @@ const supplementalMetricIcons = {
   momentum: TrendingUp,
 } satisfies Record<SupplementalMetricId, typeof TrendingUp>;
 
-const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v2";
+const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v3";
 const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v1";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
@@ -158,6 +159,7 @@ export default function Home() {
   );
   const t = uiCopy[language];
   const enabledSupplementalMetricIds = supplementalMetricIds.filter((id) => supplementalMetricSettings[id]);
+  const actualPeersSourceUrl = analysis?.actualPeersSourceUrl;
 
   const asOf = analysis?.asOf
     ? new Intl.DateTimeFormat(localeForLanguage(language), {
@@ -533,7 +535,13 @@ export default function Home() {
               </span>
               <span className="miniChip">
                 <BarChart3 size={15} />
-                <TermLabel label={t.peers.label} language={language} termKey="peers" />:{" "}
+                <TermLabel
+                  actualPeersSourceUrl={actualPeersSourceUrl}
+                  label={t.peers.label}
+                  language={language}
+                  termKey="peers"
+                />
+                :{" "}
                 {analysis.peerSymbols.length ? analysis.peerSymbols.join(", ") : t.notAvailable}
               </span>
               {analysis.exchange ? (
@@ -614,6 +622,7 @@ export default function Home() {
             <section className="metricGrid" style={{marginBottom: '32px'}} aria-label={t.aria.metrics}>
               {analysis.indicators.map((indicator) => (
                 <MetricCard
+                  actualPeersSourceUrl={actualPeersSourceUrl}
                   indicator={indicator}
                   key={indicator.id}
                   language={language}
@@ -634,7 +643,9 @@ export default function Home() {
               />
             ) : null}
 
-            <p className="finePrint">{analysis.dataNotes.join(" ")}</p>
+            <p className="finePrint">
+              <JoinedTextWithActualPeersLinks href={actualPeersSourceUrl} texts={analysis.dataNotes} />
+            </p>
           </>
         ) : loading ? (
           <StatePanel icon={<Loader2 size={34} />} title={t.states.loadingTitle} text={t.states.loadingText} type="loading" />
@@ -812,11 +823,13 @@ function Fact({
 }
 
 function MetricCard({
+  actualPeersSourceUrl,
   indicator,
   language,
   scoreAria,
   toneLabels,
 }: {
+  actualPeersSourceUrl?: string;
   indicator: IndicatorResult;
   language: Language;
   scoreAria: (score: number) => string;
@@ -834,10 +847,20 @@ function MetricCard({
         </div>
         <div className="metricTitle">
           <h3>
-            <TermLabel label={indicator.title} language={language} termKey={termForLabel(indicator.title)} />
+            <TermLabel
+              actualPeersSourceUrl={actualPeersSourceUrl}
+              label={indicator.title}
+              language={language}
+              termKey={termForLabel(indicator.title)}
+            />
           </h3>
           <small>
-            <TermLabel label={indicator.subtitle} language={language} termKey={termForLabel(indicator.subtitle)} />
+            <TermLabel
+              actualPeersSourceUrl={actualPeersSourceUrl}
+              label={indicator.subtitle}
+              language={language}
+              termKey={termForLabel(indicator.subtitle)}
+            />
           </small>
         </div>
       </div>
@@ -852,7 +875,12 @@ function MetricCard({
         {indicator.evidence.map((item) => (
           <li key={`${indicator.id}-${item.label}`}>
             <span>
-              <TermLabel label={item.label} language={language} termKey={termForLabel(item.label)} />
+              <TermLabel
+                actualPeersSourceUrl={actualPeersSourceUrl}
+                label={item.label}
+                language={language}
+                termKey={termForLabel(item.label)}
+              />
             </span>
             <strong>{item.value}</strong>
           </li>
@@ -871,11 +899,32 @@ function MetricCard({
   );
 }
 
-function TermLabel({ label, language, termKey }: { label: string; language: Language; termKey?: TermKey }) {
+function TermLabel({
+  actualPeersSourceUrl,
+  label,
+  language,
+  termKey,
+}: {
+  actualPeersSourceUrl?: string;
+  label: string;
+  language: Language;
+  termKey?: TermKey;
+}) {
   const explanation = termKey ? termDefinitions[language][termKey] : undefined;
 
   if (!explanation) {
     return <>{label}</>;
+  }
+
+  if (termKey === "peers" && actualPeersSourceUrl) {
+    return (
+      <span className="tooltipTerm tooltipTermRich" tabIndex={0}>
+        {label}
+        <span className="tooltipBubble" role="tooltip">
+          <TextWithActualPeersLink href={actualPeersSourceUrl} text={explanation} />
+        </span>
+      </span>
+    );
   }
 
   return (

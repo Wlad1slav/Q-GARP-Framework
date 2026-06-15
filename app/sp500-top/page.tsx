@@ -38,6 +38,7 @@ import {
   type AppAnalysisSettingsChangeDetail,
   type AppLanguageChangeDetail,
 } from "@/lib/app-events";
+import { TextWithActualPeersLink } from "@/lib/actual-peers-link";
 import { readBrowserStorageItem, removeBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
 import { companyLogoUrl } from "@/lib/company-logo";
 import { defaultLanguage, LANGUAGE_STORAGE_KEY, normalizeLanguage, type Language } from "@/lib/i18n";
@@ -52,6 +53,7 @@ type ConstituentsPayload = {
   asOf: string;
   sourceName: string;
   sourceUrl: string;
+  actualPeersSourceUrl?: string;
   message?: string;
 };
 
@@ -152,8 +154,8 @@ const copy = {
     home: "Чеклист тікера",
     source: "Список",
     overall: "Загальний score",
-    peerNote:
-      "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера: дефолтні peers підтягуються з ACTUAL_PEERS, а якщо для тікера там немає групи, використовується Yahoo fallback. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
+    // peerNote:
+    //   "Оцінки в топі рахуються тією ж дефолтною методологією, що й чекліст тікера: дефолтні peers підтягуються з ACTUAL_PEERS, а якщо для тікера там немає групи, використовується Yahoo fallback. Локально збережені manual peers з однотікерової сторінки тут не застосовуються.",
     tableTitle: "Детальний рейтинг",
     rankingSearchPlaceholder: "Пошук за тикером, компанією чи сектором",
     rankingNoMatches: "Нічого не знайдено за цим пошуком.",
@@ -352,6 +354,7 @@ export default function Sp500TopPage() {
   const [loadingConstituents, setLoadingConstituents] = useState(true);
   const [items, setItems] = useState<Sp500TopItem[]>([]);
   const [failed, setFailed] = useState<Sp500TopFailure[]>([]);
+  const [actualPeersSourceUrl, setActualPeersSourceUrl] = useState<string | undefined>();
   const [processedCount, setProcessedCount] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -409,6 +412,7 @@ export default function Sp500TopPage() {
           url: payload.sourceUrl,
           asOf: payload.asOf,
         });
+        setActualPeersSourceUrl(payload.actualPeersSourceUrl);
       } catch (caught) {
         if (!active) return;
         setError(caught instanceof Error ? caught.message : copy[requestLanguage].errors.constituents);

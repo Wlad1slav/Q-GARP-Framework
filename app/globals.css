@@ -1010,6 +1010,76 @@ button:disabled {
   transform: translate(10px, 0) rotate(45deg);
 }
 
+.tooltipTermRich::after,
+.tooltipTermRich::before {
+  display: none;
+  content: none;
+}
+
+.tooltipBubble {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 0;
+  z-index: 30;
+  width: min(280px, calc(100vw - 36px));
+  padding: 10px 11px;
+  color: #fff;
+  background: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+  box-shadow: 0 16px 34px rgba(31, 35, 40, 0.22);
+  font-size: 0.78rem;
+  font-weight: 560;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translateY(4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+  visibility: hidden;
+  white-space: normal;
+}
+
+.tooltipBubble::before {
+  position: absolute;
+  bottom: -5px;
+  left: 10px;
+  width: 9px;
+  height: 9px;
+  content: "";
+  background: var(--ink);
+  transform: rotate(45deg);
+}
+
+.tooltipTermRich:hover .tooltipBubble,
+.tooltipTermRich:focus-within .tooltipBubble {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.actualPeersLink {
+  color: var(--blue);
+  font-weight: 760;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.actualPeersLink:hover {
+  color: var(--ink);
+}
+
+.tooltipBubble .actualPeersLink {
+  color: #fff;
+  font-weight: 780;
+  text-decoration-color: rgba(255, 255, 255, 0.75);
+}
+
 .statusRow {
   display: flex;
   flex-wrap: wrap;
