@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
+  DEFAULT_ANALYSIS_SETTINGS,
   readAnalysisSettings,
   SECTOR_WEIGHTS_QUERY_PARAM,
   sectorWeightsSearchParam,
@@ -74,29 +75,49 @@ const supplementalMetricsCopy = {
     fcfYield: "FCF yield",
     impliedUpside: "Implied upside",
     fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
+    momentum: "Momentum",
   },
   en: {
     totalShareholderYield: "Total Shareholder Yield",
     fcfYield: "FCF yield",
     impliedUpside: "Implied upside",
     fiftyTwoWeekRangePosition: "52-week range position",
+    momentum: "Momentum",
   },
 } satisfies Record<Language, Record<SupplementalMetricId, string>>;
 
 export function AppHeader() {
   const router = useRouter();
-  const [language, setLanguage] = useState<Language>(readInitialHeaderLanguage);
-  const [ticker, setTicker] = useState(readInitialHeaderTicker);
-  const [lastTicker, setLastTicker] = useState(readInitialHeaderTicker);
+  const [language, setLanguage] = useState<Language>(defaultLanguage);
+  const [ticker, setTicker] = useState("");
+  const [lastTicker, setLastTicker] = useState("");
   const [loading, setLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [useSectorWeights, setUseSectorWeights] = useState(() => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights);
+  const [useSectorWeights, setUseSectorWeights] = useState(DEFAULT_ANALYSIS_SETTINGS.useSectorWeights);
   const [supplementalMetricSettings, setSupplementalMetricSettings] = useState(
-    () => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).supplementalMetrics,
+    DEFAULT_ANALYSIS_SETTINGS.supplementalMetrics,
   );
   const t = uiCopy[language];
   const header = headerCopy[language];
   const mobileMenuId = "app-mobile-menu";
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const initialLanguage = normalizeLanguage(params.get("lang") ?? readLocalStorageValue(LANGUAGE_STORAGE_KEY));
+      const initialTicker = normalizeTicker(params.get("ticker") ?? "");
+      const settings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
+
+      setLanguage(initialLanguage);
+      setTicker(initialTicker);
+      setLastTicker(initialTicker);
+      setUseSectorWeights(settings.useSectorWeights);
+      setSupplementalMetricSettings(settings.supplementalMetrics);
+      document.documentElement.lang = initialLanguage;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -175,7 +196,7 @@ export function AppHeader() {
     if (nextLanguage === language) return;
 
     setLanguage(nextLanguage);
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+    writeLocalStorageValue(LANGUAGE_STORAGE_KEY, nextLanguage);
     document.documentElement.lang = nextLanguage;
     window.dispatchEvent(new CustomEvent(APP_LANGUAGE_CHANGE_EVENT, { detail: { language: nextLanguage } }));
   }
@@ -384,18 +405,20 @@ function LanguageToggle({
   );
 }
 
-function readInitialHeaderLanguage(): Language {
-  if (typeof window === "undefined") return defaultLanguage;
-
-  const params = new URLSearchParams(window.location.search);
-  return normalizeLanguage(params.get("lang") ?? window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+function readLocalStorageValue(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
-function readInitialHeaderTicker() {
-  if (typeof window === "undefined") return "";
-
-  const params = new URLSearchParams(window.location.search);
-  return normalizeTicker(params.get("ticker") ?? "");
+function writeLocalStorageValue(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Keep the UI interactive even when browser storage is unavailable.
+  }
 }
 
 function HeaderSettingsModule({

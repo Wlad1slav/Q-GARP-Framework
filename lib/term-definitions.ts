@@ -26,6 +26,7 @@ export const termDefinitions = {
     impliedUpside: "Implied upside - потенціал до медіанного target price аналітиків відносно поточної ціни.",
     fiftyTwoWeekRangePosition:
       "Позиція в 52-тижневому діапазоні - де поточна ціна між річним мінімумом і максимумом.",
+    momentum: "Momentum - тренд ціни відносно її нещодавнього середнього значення.",
   },
   en: {
     cagr: "CAGR - compound annual growth rate. Shows the steady annual pace a metric would need to grow over a period.",
@@ -50,6 +51,7 @@ export const termDefinitions = {
     fcfYield: "FCF yield - free cash flow relative to market capitalization.",
     impliedUpside: "Implied upside - analyst median target price potential relative to the current price.",
     fiftyTwoWeekRangePosition: "52-week range position - where the current price sits between the yearly low and high.",
+    momentum: "Momentum - price trend versus its recent moving average.",
   },
 } as const satisfies Record<Language, Record<string, string>>;
 
@@ -62,6 +64,7 @@ const labelMatchers: Array<[RegExp, TermKey]> = [
   [/Implied upside/i, "impliedUpside"],
   [/52-тижнев|52-week/i, "fiftyTwoWeekRangePosition"],
   [/P\/S/i, "ps"],
+  [/Momentum/i, "momentum"],
   [/P\/E/i, "pe"],
   [/CAGR/i, "cagr"],
   [/FCF/i, "fcf"],

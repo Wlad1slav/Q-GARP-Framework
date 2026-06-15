@@ -12,6 +12,7 @@ export const DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS: SupplementalMetricSettings = 
   fcfYield: false,
   impliedUpside: false,
   fiftyTwoWeekRangePosition: false,
+  momentum: false,
 };
 
 export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
@@ -80,6 +81,7 @@ function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & 
       fcfYield: true,
       impliedUpside: true,
       fiftyTwoWeekRangePosition: true,
+      momentum: true,
     };
   }
 
@@ -103,5 +105,7 @@ function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & 
       typeof rawMetrics.fiftyTwoWeekRangePosition === "boolean"
         ? rawMetrics.fiftyTwoWeekRangePosition
         : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.fiftyTwoWeekRangePosition,
+    momentum:
+      typeof rawMetrics.momentum === "boolean" ? rawMetrics.momentum : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.momentum,
   };
 }

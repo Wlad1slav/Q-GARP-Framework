@@ -1,6 +1,7 @@
 import YahooFinance from "yahoo-finance2";
 import {
   supplementalMetricIds,
+  type SupplementalMetricChartPoint,
   type SupplementalMetricId,
   type SupplementalMetricResult,
   type SupplementalMetricsResult,
@@ -15,6 +16,13 @@ type AnyRecord = Record<string, unknown>;
 type StatementRow = AnyRecord & {
   date?: string | number | Date;
 };
+
+type PriceHistoryPoint = {
+  date: Date;
+  close: number;
+};
+
+const TWO_HUNDRED_DAY_WINDOW = 200;
 
 const yahooFinance = new YahooFinance({
   suppressNotices: ["yahooSurvey", "ripHistorical"],
@@ -34,11 +42,13 @@ export async function getSupplementalMetrics(
 
   const selectedMetricIds = normalizeSupplementalMetricIds(requestedMetricIds);
   const needsCashFlow = selectedMetricIds.some((id) => id === "totalShareholderYield" || id === "fcfYield");
+  const needsMomentumHistory = selectedMetricIds.includes("momentum");
   const period1 = yearStart(-2);
-  const [quoteSummary, trailingCashFlow, annualCashFlow] = await Promise.all([
+  const [quoteSummary, trailingCashFlow, annualCashFlow, priceHistory] = await Promise.all([
     getQuoteSummary(symbol, ["price", "summaryDetail", "financialData"], priority),
     needsCashFlow ? getCashFlow(symbol, "trailing", period1, priority) : Promise.resolve([]),
     needsCashFlow ? getCashFlow(symbol, "annual", period1, priority) : Promise.resolve([]),
+    needsMomentumHistory ? getPriceHistory(symbol, yearsAgo(2), priority) : Promise.resolve([]),
   ]);
 
   const price = asRecord(quoteSummary.price);
@@ -70,6 +80,7 @@ export async function getSupplementalMetrics(
   const targetMedianPrice = firstNumber(financialData.targetMedianPrice);
   const fiftyTwoWeekLow = firstNumber(summaryDetail.fiftyTwoWeekLow);
   const fiftyTwoWeekHigh = firstNumber(summaryDetail.fiftyTwoWeekHigh);
+  const twoHundredDayAverage = firstNumber(summaryDetail.twoHundredDayAverage, financialData.twoHundredDayAverage);
 
   const totalShareholderYield = addIfAny(dividendYield, buybackYield);
   const fcfYield = ratio(freeCashFlow, marketCap);
@@ -84,7 +95,12 @@ export async function getSupplementalMetrics(
     fiftyTwoWeekHigh > fiftyTwoWeekLow
       ? (currentPrice - fiftyTwoWeekLow) / (fiftyTwoWeekHigh - fiftyTwoWeekLow)
       : undefined;
+  const momentum =
+    isFiniteNumber(currentPrice) && isFiniteNumber(twoHundredDayAverage) && twoHundredDayAverage > 0
+      ? (currentPrice - twoHundredDayAverage) / twoHundredDayAverage
+      : undefined;
   const copy = supplementalCopy(language);
+  const momentumChart = buildMomentumChart(priceHistory, twoHundredDayAverage, currency, copy);
   const metricsById = {
     totalShareholderYield: {
       id: "totalShareholderYield",
@@ -114,6 +130,19 @@ export async function getSupplementalMetrics(
         isFiniteNumber(fiftyTwoWeekLow) && isFiniteNumber(fiftyTwoWeekHigh)
           ? `${formatMoney(fiftyTwoWeekLow, currency, language)} - ${formatMoney(fiftyTwoWeekHigh, currency, language)}`
           : undefined,
+    },
+    momentum: {
+      id: "momentum",
+      value: formatSignedPercent(momentum, language),
+      detail: detailParts(
+        [
+          [copy.price, formatMoney(currentPrice, currency, language)],
+          [copy.twoHundredDayAverage, formatMoney(twoHundredDayAverage, currency, language)],
+        ],
+        language,
+        "; ",
+      ),
+      chart: momentumChart,
     },
   } satisfies Record<SupplementalMetricId, SupplementalMetricResult>;
 
@@ -166,11 +195,123 @@ async function getCashFlow(symbol: string, type: "annual" | "trailing", period1:
   }
 }
 
+async function getPriceHistory(symbol: string, period1: string, priority: QueuePriority) {
+  try {
+    const chart = (await runCachedYahooRequest(`supplemental:chart:${symbol}:${period1}:1d`, priority, () =>
+      yahooFinance.chart(
+        symbol,
+        {
+          period1,
+          interval: "1d",
+        },
+        { validateResult: false },
+      ),
+    )) as AnyRecord;
+
+    return chartToPrices(chart);
+  } catch {
+    return [];
+  }
+}
+
 function yearStart(offset: number) {
   const date = new Date();
   date.setUTCFullYear(date.getUTCFullYear() + offset, 0, 1);
   date.setUTCHours(0, 0, 0, 0);
   return date.toISOString().slice(0, 10);
+}
+
+function yearsAgo(years: number) {
+  const date = new Date();
+  date.setUTCFullYear(date.getUTCFullYear() - years);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildMomentumChart(
+  prices: PriceHistoryPoint[],
+  currentAverage: number | undefined,
+  currency: string | undefined,
+  copy: ReturnType<typeof supplementalCopy>,
+): SupplementalMetricResult["chart"] {
+  const sortedPrices = [...prices].sort((left, right) => left.date.getTime() - right.date.getTime());
+  if (sortedPrices.length < 2) return undefined;
+
+  const oneYearAgo = new Date();
+  oneYearAgo.setUTCFullYear(oneYearAgo.getUTCFullYear() - 1);
+  oneYearAgo.setUTCHours(0, 0, 0, 0);
+
+  const points = withTwoHundredDayAverage(sortedPrices)
+    .filter((point) => point.date.getTime() >= oneYearAgo.getTime())
+    .map((point): SupplementalMetricChartPoint => {
+      const average = isFiniteNumber(point.average)
+        ? point.average
+        : isFiniteNumber(currentAverage)
+          ? currentAverage
+          : undefined;
+
+      return {
+        date: point.date.toISOString().slice(0, 10),
+        price: roundChartNumber(point.close),
+        average: isFiniteNumber(average) ? roundChartNumber(average) : undefined,
+      };
+    })
+    .filter((point) => isFiniteNumber(point.price));
+
+  if (points.length < 2) return undefined;
+
+  return {
+    currency,
+    priceLabel: copy.price,
+    averageLabel: copy.twoHundredDayAverage,
+    points,
+  };
+}
+
+function withTwoHundredDayAverage(points: PriceHistoryPoint[]) {
+  const window: number[] = [];
+  let sum = 0;
+
+  return points.map((point) => {
+    window.push(point.close);
+    sum += point.close;
+
+    if (window.length > TWO_HUNDRED_DAY_WINDOW) {
+      sum -= window.shift() ?? 0;
+    }
+
+    return {
+      ...point,
+      average: window.length === TWO_HUNDRED_DAY_WINDOW ? sum / TWO_HUNDRED_DAY_WINDOW : undefined,
+    };
+  });
+}
+
+function chartToPrices(chart: AnyRecord): PriceHistoryPoint[] {
+  if (Array.isArray(chart.quotes)) {
+    return chart.quotes
+      .map((quote) => {
+        const row = asRecord(quote);
+        const date = dateValue(row.date);
+        const close = firstNumber(row.close, row.adjclose);
+        return date && isFiniteNumber(close) && close > 0 ? { date, close } : undefined;
+      })
+      .filter((item): item is PriceHistoryPoint => Boolean(item));
+  }
+
+  const timestamps = Array.isArray(chart.timestamp) ? chart.timestamp : [];
+  const indicators = asRecord(chart.indicators);
+  const quotes = Array.isArray(indicators.quote) ? indicators.quote : [];
+  const quote = asRecord(quotes[0]);
+  const closes = Array.isArray(quote.close) ? quote.close : [];
+
+  return timestamps
+    .map((stamp, index) => {
+      const date = dateValue(stamp);
+      const close = num(closes[index]);
+      return date && isFiniteNumber(close) && close > 0 ? { date, close } : undefined;
+    })
+    .filter((item): item is PriceHistoryPoint => Boolean(item));
 }
 
 function lastUsefulRow(rows: StatementRow[], keys: string[]) {
@@ -190,10 +331,10 @@ function sortRows(rows: StatementRow[]) {
   });
 }
 
-function detailParts(items: Array<[string, string]>, language: Language) {
+function detailParts(items: Array<[string, string]>, language: Language, separator = " + ") {
   const emptyValue = analysisCopy[language].notAvailable;
   const parts = items.filter(([, value]) => value !== emptyValue).map(([label, value]) => `${label} ${value}`);
-  return parts.length ? parts.join(" + ") : undefined;
+  return parts.length ? parts.join(separator) : undefined;
 }
 
 function formatCompactDetail(label: string, value: number | undefined, language: Language) {
@@ -206,16 +347,20 @@ function supplementalCopy(language: Language) {
     return {
       dividend: "Dividend",
       buyback: "buyback",
+      price: "Price",
       target: "Target",
-      sourceNote: "Supplemental metrics: Yahoo Finance quoteSummary and cash-flow data.",
+      twoHundredDayAverage: "200D avg",
+      sourceNote: "Supplemental metrics: Yahoo Finance quoteSummary, price history, and cash-flow data.",
     };
   }
 
   return {
     dividend: "Дивіденди",
     buyback: "викуп",
+    price: "Ціна",
     target: "Таргет",
-    sourceNote: "Додаткові метрики: Yahoo Finance quoteSummary та cash-flow дані.",
+    twoHundredDayAverage: "200D середня",
+    sourceNote: "Додаткові метрики: Yahoo Finance quoteSummary, історія цін та cash-flow дані.",
   };
 }
 
@@ -259,6 +404,10 @@ function normalizeYield(value: number | undefined) {
   return Math.abs(value) > 1 ? value / 100 : value;
 }
 
+function roundChartNumber(value: number) {
+  return Math.round(value * 10000) / 10000;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -296,6 +445,12 @@ function formatPercent(value: number | undefined, language: Language) {
     maximumFractionDigits: 1,
     minimumFractionDigits: Math.abs(value) < 0.1 ? 1 : 0,
   }).format(value);
+}
+
+function formatSignedPercent(value: number | undefined, language: Language) {
+  const formatted = formatPercent(value, language);
+  if (!isFiniteNumber(value) || value <= 0 || formatted === analysisCopy[language].notAvailable) return formatted;
+  return `+${formatted}`;
 }
 
 function formatCompact(value: number | undefined, language: Language) {

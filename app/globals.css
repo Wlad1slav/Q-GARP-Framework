@@ -1046,6 +1046,10 @@ button:disabled {
   border-radius: 0;
 }
 
+.supplementalMetricWide {
+  grid-column: 1 / -1;
+}
+
 .supplementalMetricTop {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
@@ -1099,6 +1103,85 @@ button:disabled {
   gap: 7px;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.momentumChart {
+  min-width: 0;
+  margin: 12px 0 0;
+}
+
+.momentumChartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.momentumChartLegend span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.momentumLegendSwatch {
+  width: 18px;
+  height: 3px;
+  flex: 0 0 auto;
+  background: var(--blue);
+}
+
+.momentumLegendSwatch.average {
+  background: var(--amber);
+}
+
+.momentumChart svg {
+  display: block;
+  width: 100%;
+  height: 112px;
+  margin-top: 8px;
+  overflow: visible;
+  background: #fbfcfd;
+  border: 1px solid var(--line);
+}
+
+.momentumChartGrid {
+  stroke: #e6ebf0;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.momentumChartPrice,
+.momentumChartAverage {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.momentumChartPrice {
+  stroke: var(--blue);
+  stroke-width: 2.8;
+}
+
+.momentumChartAverage {
+  stroke: var(--amber);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.momentumChartAxis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 720;
+  line-height: 1.2;
 }
 
 .supplementalNote {

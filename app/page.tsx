@@ -79,6 +79,7 @@ const supplementalMetricIcons = {
   fcfYield: Calculator,
   impliedUpside: TrendingUp,
   fiftyTwoWeekRangePosition: BarChart3,
+  momentum: TrendingUp,
 } satisfies Record<SupplementalMetricId, typeof TrendingUp>;
 
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v2";
@@ -96,6 +97,7 @@ const supplementalMetricsCopy = {
       fcfYield: "FCF yield",
       impliedUpside: "Implied upside",
       fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
+      momentum: "Momentum",
     },
   },
   en: {
@@ -107,6 +109,7 @@ const supplementalMetricsCopy = {
       fcfYield: "FCF yield",
       impliedUpside: "Implied upside",
       fiftyTwoWeekRangePosition: "52-week range position",
+      momentum: "Momentum",
     },
   },
 } satisfies Record<
@@ -539,16 +542,7 @@ export default function Home() {
               ) : null}
             </div>
 
-            {enabledSupplementalMetricIds.length ? (
-              <SupplementalMetricsPanel
-                enabledMetricIds={enabledSupplementalMetricIds}
-                errors={supplementalErrors}
-                language={language}
-                loading={supplementalLoading}
-                metrics={supplementalMetrics}
-                notes={supplementalNotes}
-              />
-            ) : null}
+            
 
             <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
               <div className="peerEditorText">
@@ -615,7 +609,7 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="metricGrid" aria-label={t.aria.metrics}>
+            <section className="metricGrid" style={{marginBottom: '32px'}} aria-label={t.aria.metrics}>
               {analysis.indicators.map((indicator) => (
                 <MetricCard
                   indicator={indicator}
@@ -626,6 +620,17 @@ export default function Home() {
                 />
               ))}
             </section>
+
+            {enabledSupplementalMetricIds.length ? (
+              <SupplementalMetricsPanel
+                enabledMetricIds={enabledSupplementalMetricIds}
+                errors={supplementalErrors}
+                language={language}
+                loading={supplementalLoading}
+                metrics={supplementalMetrics}
+                notes={supplementalNotes}
+              />
+            ) : null}
 
             <p className="finePrint">{analysis.dataNotes.join(" ")}</p>
           </>
@@ -667,7 +672,7 @@ function SupplementalMetricsPanel({
         const Icon = supplementalMetricIcons[id];
 
         return (
-          <article className="supplementalMetric" key={id}>
+          <article className={`supplementalMetric ${id === "momentum" ? "supplementalMetricWide" : ""}`} key={id}>
             <div className="supplementalMetricTop">
               <span className="supplementalMetricIcon" aria-hidden="true">
                 <Icon size={17} />
@@ -688,6 +693,7 @@ function SupplementalMetricsPanel({
             </strong>
             {error && !isLoading ? <small className="supplementalMetricError">{error}</small> : null}
             {!error && metric?.detail && !isLoading ? <small>{metric.detail}</small> : null}
+            {!error && metric?.chart && !isLoading ? <SupplementalMetricChart chart={metric.chart} language={language} /> : null}
           </article>
         );
       })}
@@ -695,6 +701,90 @@ function SupplementalMetricsPanel({
         <p className="supplementalNote">{dataNotes.join(" ")}</p>
       ) : null}
     </section>
+  );
+}
+
+function SupplementalMetricChart({
+  chart,
+  language,
+}: {
+  chart: NonNullable<SupplementalMetricResult["chart"]>;
+  language: Language;
+}) {
+  const points = chart.points.filter((point) => isFiniteChartNumber(point.price));
+  if (points.length < 2) return null;
+
+  const width = 1000;
+  const height = 112;
+  const top = 8;
+  const bottom = 12;
+  const plotHeight = height - top - bottom;
+  const times = points.map((point) => Date.parse(point.date));
+  const firstTime = times[0];
+  const lastTime = times[times.length - 1];
+  const hasTimeline = times.every(Number.isFinite) && lastTime > firstTime;
+  const averageValues = points.map((point) => point.average).filter(isFiniteChartNumber);
+  const values = [...points.map((point) => point.price), ...averageValues];
+  let minValue = Math.min(...values);
+  let maxValue = Math.max(...values);
+
+  if (minValue === maxValue) {
+    minValue -= Math.max(Math.abs(minValue) * 0.02, 1);
+    maxValue += Math.max(Math.abs(maxValue) * 0.02, 1);
+  } else {
+    const padding = (maxValue - minValue) * 0.08;
+    minValue -= padding;
+    maxValue += padding;
+  }
+
+  const xFor = (point: (typeof points)[number], index: number) => {
+    if (hasTimeline) {
+      return ((Date.parse(point.date) - firstTime) / (lastTime - firstTime)) * width;
+    }
+
+    return (index / Math.max(points.length - 1, 1)) * width;
+  };
+  const yFor = (value: number) => top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
+  const pricePath = svgPath(points.map((point, index) => ({ x: xFor(point, index), y: yFor(point.price) })));
+  const averagePath = svgPath(
+    points
+      .map((point, index) =>
+        isFiniteChartNumber(point.average) ? { x: xFor(point, index), y: yFor(point.average) } : undefined,
+      )
+      .filter((point): point is { x: number; y: number } => Boolean(point)),
+  );
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  const latestAverage = [...points].reverse().find((point) => isFiniteChartNumber(point.average))?.average;
+  const title = `${chart.priceLabel}: ${formatChartMoney(lastPoint.price, chart.currency, language)}`;
+
+  return (
+    <figure className="momentumChart" aria-label={title}>
+      <div className="momentumChartLegend">
+        <span>
+          <i className="momentumLegendSwatch price" aria-hidden="true" />
+          {chart.priceLabel}: {formatChartMoney(lastPoint.price, chart.currency, language)}
+        </span>
+        {isFiniteChartNumber(latestAverage) ? (
+          <span>
+            <i className="momentumLegendSwatch average" aria-hidden="true" />
+            {chart.averageLabel}: {formatChartMoney(latestAverage, chart.currency, language)}
+          </span>
+        ) : null}
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
+        <title>{title}</title>
+        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.25} y2={top + plotHeight * 0.25} />
+        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.5} y2={top + plotHeight * 0.5} />
+        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
+        {averagePath ? <path className="momentumChartAverage" d={averagePath} /> : null}
+        <path className="momentumChartPrice" d={pricePath} />
+      </svg>
+      <div className="momentumChartAxis" aria-hidden="true">
+        <span>{formatChartDate(firstPoint.date, language)}</span>
+        <span>{formatChartDate(lastPoint.date, language)}</span>
+      </div>
+    </figure>
   );
 }
 
@@ -1068,4 +1158,40 @@ function omitSupplementalKeys<T>(
     delete next[id];
   }
   return next;
+}
+
+function svgPath(points: Array<{ x: number; y: number }>) {
+  if (points.length < 2) return "";
+
+  return points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(" ");
+}
+
+function isFiniteChartNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatChartMoney(value: number, currency = "USD", language: Language) {
+  try {
+    return new Intl.NumberFormat(localeForLanguage(language), {
+      style: "currency",
+      currency,
+      maximumFractionDigits: value >= 100 ? 0 : 2,
+    }).format(value);
+  } catch {
+    return new Intl.NumberFormat(localeForLanguage(language), {
+      maximumFractionDigits: value >= 100 ? 0 : 2,
+    }).format(value);
+  }
+}
+
+function formatChartDate(value: string, language: Language) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
+    month: "short",
+    year: "2-digit",
+  }).format(date);
 }

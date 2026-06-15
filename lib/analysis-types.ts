@@ -6,6 +6,7 @@ export const supplementalMetricIds = [
   "fcfYield",
   "impliedUpside",
   "fiftyTwoWeekRangePosition",
+  "momentum",
 ] as const;
 
 export type SupplementalMetricId = (typeof supplementalMetricIds)[number];
@@ -58,6 +59,20 @@ export interface SupplementalMetricResult {
   id: SupplementalMetricId;
   value: string;
   detail?: string;
+  chart?: SupplementalMetricChart;
+}
+
+export interface SupplementalMetricChartPoint {
+  date: string;
+  price: number;
+  average?: number;
+}
+
+export interface SupplementalMetricChart {
+  currency?: string;
+  priceLabel: string;
+  averageLabel: string;
+  points: SupplementalMetricChartPoint[];
 }
 
 export interface SupplementalMetricsResult {
