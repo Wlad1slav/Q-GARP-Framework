@@ -26,6 +26,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as Reac
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
+  DEFAULT_ANALYSIS_SETTINGS,
   readAnalysisSettings,
   sectorWeightsSearchParam,
   SECTOR_WEIGHTS_QUERY_PARAM,
@@ -37,8 +38,9 @@ import {
   type AppAnalysisSettingsChangeDetail,
   type AppLanguageChangeDetail,
 } from "@/lib/app-events";
+import { readBrowserStorageItem, removeBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
 import { companyLogoUrl } from "@/lib/company-logo";
-import { LANGUAGE_STORAGE_KEY, normalizeLanguage, type Language } from "@/lib/i18n";
+import { defaultLanguage, LANGUAGE_STORAGE_KEY, normalizeLanguage, type Language } from "@/lib/i18n";
 import type { Sp500Constituent } from "@/lib/sp500";
 import type { Sp500IndicatorId, Sp500TopFailure, Sp500TopItem, Sp500TopResponse } from "@/lib/sp500-top-types";
 import { sp500IndicatorIds } from "@/lib/sp500-top-types";
@@ -343,12 +345,8 @@ const copy = {
 } as const;
 
 export default function Sp500TopPage() {
-  const [language, setLanguage] = useState<Language>(() =>
-    typeof window === "undefined" ? "uk" : normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)),
-  );
-  const [useSectorWeights, setUseSectorWeights] = useState(
-    () => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights,
-  );
+  const [language, setLanguage] = useState<Language>(defaultLanguage);
+  const [useSectorWeights, setUseSectorWeights] = useState(DEFAULT_ANALYSIS_SETTINGS.useSectorWeights);
   const [constituents, setConstituents] = useState<Sp500Constituent[]>([]);
   const [source, setSource] = useState<{ name: string; url: string; asOf: string } | null>(null);
   const [loadingConstituents, setLoadingConstituents] = useState(true);
@@ -389,21 +387,18 @@ export default function Sp500TopPage() {
   }, [constituents]);
 
   useEffect(() => {
-    const initialLanguage = normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
-    document.documentElement.lang = initialLanguage;
-
     let active = true;
 
-    async function loadConstituents() {
+    async function loadConstituents(requestLanguage: Language) {
       setLoadingConstituents(true);
       setError("");
 
       try {
         const response = await fetch("/api/sp500-constituents");
-        const payload = await readJsonPayload<ConstituentsPayload>(response, copy[initialLanguage].errors.constituents);
+        const payload = await readJsonPayload<ConstituentsPayload>(response, copy[requestLanguage].errors.constituents);
 
         if (!response.ok) {
-          throw new Error(payload.message ?? copy[initialLanguage].errors.constituents);
+          throw new Error(payload.message ?? copy[requestLanguage].errors.constituents);
         }
 
         if (!active) return;
@@ -416,23 +411,32 @@ export default function Sp500TopPage() {
         });
       } catch (caught) {
         if (!active) return;
-        setError(caught instanceof Error ? caught.message : copy[initialLanguage].errors.constituents);
+        setError(caught instanceof Error ? caught.message : copy[requestLanguage].errors.constituents);
       } finally {
         if (active) setLoadingConstituents(false);
       }
     }
 
-    void loadConstituents();
+    const timer = window.setTimeout(() => {
+      const initialLanguage = normalizeLanguage(readBrowserStorageItem(LANGUAGE_STORAGE_KEY));
+      const settings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
+
+      setLanguage(initialLanguage);
+      setUseSectorWeights(settings.useSectorWeights);
+      document.documentElement.lang = initialLanguage;
+      void loadConstituents(initialLanguage);
+    }, 0);
 
     return () => {
       active = false;
+      window.clearTimeout(timer);
       abortRef.current?.abort();
     };
   }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    writeBrowserStorageItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
   useEffect(() => {
@@ -1912,10 +1916,10 @@ function readSp500ScanCache(constituents: Sp500Constituent[], useSectorWeights: 
   if (typeof window === "undefined") return [];
 
   try {
-    const raw = window.localStorage.getItem(SP500_SCAN_CACHE_STORAGE_KEY);
+    const raw = readBrowserStorageItem(SP500_SCAN_CACHE_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as StoredSp500Scan) : undefined;
     if (!parsed || parsed.expiresAt <= Date.now() || !parsed.modes || typeof parsed.modes !== "object") {
-      window.localStorage.removeItem(SP500_SCAN_CACHE_STORAGE_KEY);
+      removeBrowserStorageItem(SP500_SCAN_CACHE_STORAGE_KEY);
       return [];
     }
 
@@ -1958,19 +1962,19 @@ function writeSp500ScanCache(items: Sp500TopItem[], useSectorWeights: boolean) {
     },
   };
 
-  window.localStorage.setItem(SP500_SCAN_CACHE_STORAGE_KEY, JSON.stringify(payload));
+  writeBrowserStorageItem(SP500_SCAN_CACHE_STORAGE_KEY, JSON.stringify(payload));
 }
 
 function removeSp500ScanCache() {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(SP500_SCAN_CACHE_STORAGE_KEY);
+  removeBrowserStorageItem(SP500_SCAN_CACHE_STORAGE_KEY);
 }
 
 function readStoredSp500Scan(): StoredSp500Scan | undefined {
   if (typeof window === "undefined") return undefined;
 
   try {
-    const raw = window.localStorage.getItem(SP500_SCAN_CACHE_STORAGE_KEY);
+    const raw = readBrowserStorageItem(SP500_SCAN_CACHE_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as StoredSp500Scan) : undefined;
     if (!parsed || parsed.expiresAt <= Date.now() || !parsed.modes || typeof parsed.modes !== "object") {
       return undefined;

@@ -20,6 +20,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
+  DEFAULT_ANALYSIS_SETTINGS,
   parseSectorWeightsFlag,
   readAnalysisSettings,
   sectorWeightsSearchParam,
@@ -55,6 +56,7 @@ import {
   type AppAnalysisStatusDetail,
   type AppLanguageChangeDetail,
 } from "@/lib/app-events";
+import { readBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
 import { termDefinitions, termForLabel, type TermKey } from "@/lib/term-definitions";
 import { normalizeTicker } from "@/lib/ticker";
 import Image from "next/image";
@@ -142,9 +144,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [peerInput, setPeerInput] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
-  const [useSectorWeights, setUseSectorWeights] = useState(() => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).useSectorWeights);
+  const [useSectorWeights, setUseSectorWeights] = useState(DEFAULT_ANALYSIS_SETTINGS.useSectorWeights);
   const [supplementalMetricSettings, setSupplementalMetricSettings] = useState(
-    () => readAnalysisSettings(APP_SETTINGS_STORAGE_KEY).supplementalMetrics,
+    DEFAULT_ANALYSIS_SETTINGS.supplementalMetrics,
   );
   const [supplementalMetrics, setSupplementalMetrics] = useState<Partial<Record<SupplementalMetricId, SupplementalMetricResult>>>({});
   const [supplementalLoading, setSupplementalLoading] = useState<Partial<Record<SupplementalMetricId, boolean>>>({});
@@ -327,7 +329,7 @@ export default function Home() {
 
     const params = new URLSearchParams(window.location.search);
     const storedSettings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
-    const initialLanguage = normalizeLanguage(params.get("lang") ?? window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+    const initialLanguage = normalizeLanguage(params.get("lang") ?? readBrowserStorageItem(LANGUAGE_STORAGE_KEY));
     const initialTicker = params.get("ticker");
     const initialUseSectorWeights = params.has(SECTOR_WEIGHTS_QUERY_PARAM)
       ? parseSectorWeightsFlag(params.get(SECTOR_WEIGHTS_QUERY_PARAM))
@@ -353,7 +355,7 @@ export default function Home() {
 
   useEffect(() => {
     document.documentElement.lang = language;
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    writeBrowserStorageItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
   useEffect(() => {
@@ -994,7 +996,7 @@ function readPeerGroups(): Record<string, string[]> {
   if (typeof window === "undefined") return {};
 
   try {
-    const raw = window.localStorage.getItem(PEER_STORAGE_KEY);
+    const raw = readBrowserStorageItem(PEER_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
@@ -1017,7 +1019,7 @@ function savePeerGroup(ticker: string, peers: string[]) {
 
   const groups = readPeerGroups();
   groups[symbol] = peers.map(normalizeTicker).filter(Boolean).slice(0, 8);
-  window.localStorage.setItem(PEER_STORAGE_KEY, JSON.stringify(groups));
+  writeBrowserStorageItem(PEER_STORAGE_KEY, JSON.stringify(groups));
 }
 
 function removeSavedPeerGroup(ticker: string) {
@@ -1028,7 +1030,7 @@ function removeSavedPeerGroup(ticker: string) {
 
   const groups = readPeerGroups();
   delete groups[symbol];
-  window.localStorage.setItem(PEER_STORAGE_KEY, JSON.stringify(groups));
+  writeBrowserStorageItem(PEER_STORAGE_KEY, JSON.stringify(groups));
 }
 
 function analysisCacheKey(ticker: string, peers: string[], language: Language, useSectorWeights: boolean) {
@@ -1046,7 +1048,7 @@ function readCachedAnalysis(key: string): AnalysisResult | null {
 
   if (entry.expiresAt <= Date.now()) {
     delete cache[key];
-    window.localStorage.setItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(cache));
+    writeBrowserStorageItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(cache));
     return null;
   }
 
@@ -1062,7 +1064,7 @@ function writeCachedAnalysis(key: string, result: AnalysisResult) {
     expiresAt: Date.now() + ANALYSIS_CACHE_TTL_MS,
   };
 
-  window.localStorage.setItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(pruneAnalysisCache(cache)));
+  writeBrowserStorageItem(ANALYSIS_CACHE_STORAGE_KEY, JSON.stringify(pruneAnalysisCache(cache)));
 }
 
 function supplementalCacheKey(ticker: string, language: Language, metricId: SupplementalMetricId) {
@@ -1078,7 +1080,7 @@ function readCachedSupplementalMetric(key: string): { result: SupplementalMetric
 
   if (entry.expiresAt <= Date.now()) {
     delete cache[key];
-    window.localStorage.setItem(SUPPLEMENTAL_CACHE_STORAGE_KEY, JSON.stringify(cache));
+    writeBrowserStorageItem(SUPPLEMENTAL_CACHE_STORAGE_KEY, JSON.stringify(cache));
     return null;
   }
 
@@ -1098,14 +1100,14 @@ function writeCachedSupplementalMetric(key: string, result: SupplementalMetricRe
     expiresAt: Date.now() + ANALYSIS_CACHE_TTL_MS,
   };
 
-  window.localStorage.setItem(SUPPLEMENTAL_CACHE_STORAGE_KEY, JSON.stringify(pruneSupplementalCache(cache)));
+  writeBrowserStorageItem(SUPPLEMENTAL_CACHE_STORAGE_KEY, JSON.stringify(pruneSupplementalCache(cache)));
 }
 
 function readAnalysisCache(): Record<string, CachedAnalysisEntry> {
   if (typeof window === "undefined") return {};
 
   try {
-    const raw = window.localStorage.getItem(ANALYSIS_CACHE_STORAGE_KEY);
+    const raw = readBrowserStorageItem(ANALYSIS_CACHE_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
@@ -1117,7 +1119,7 @@ function readSupplementalCache(): Record<string, CachedSupplementalEntry> {
   if (typeof window === "undefined") return {};
 
   try {
-    const raw = window.localStorage.getItem(SUPPLEMENTAL_CACHE_STORAGE_KEY);
+    const raw = readBrowserStorageItem(SUPPLEMENTAL_CACHE_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {

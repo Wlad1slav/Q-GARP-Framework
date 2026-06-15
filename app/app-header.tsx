@@ -23,6 +23,7 @@ import {
   APP_LANGUAGE_CHANGE_EVENT,
   type AppAnalysisStatusDetail,
 } from "@/lib/app-events";
+import { readBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
 import {
   defaultLanguage,
   languageLabels,
@@ -104,7 +105,7 @@ export function AppHeader() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      const initialLanguage = normalizeLanguage(params.get("lang") ?? readLocalStorageValue(LANGUAGE_STORAGE_KEY));
+      const initialLanguage = normalizeLanguage(params.get("lang") ?? readBrowserStorageItem(LANGUAGE_STORAGE_KEY));
       const initialTicker = normalizeTicker(params.get("ticker") ?? "");
       const settings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
 
@@ -196,7 +197,7 @@ export function AppHeader() {
     if (nextLanguage === language) return;
 
     setLanguage(nextLanguage);
-    writeLocalStorageValue(LANGUAGE_STORAGE_KEY, nextLanguage);
+    writeBrowserStorageItem(LANGUAGE_STORAGE_KEY, nextLanguage);
     document.documentElement.lang = nextLanguage;
     window.dispatchEvent(new CustomEvent(APP_LANGUAGE_CHANGE_EVENT, { detail: { language: nextLanguage } }));
   }
@@ -403,22 +404,6 @@ function LanguageToggle({
       ))}
     </div>
   );
-}
-
-function readLocalStorageValue(key: string) {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeLocalStorageValue(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Keep the UI interactive even when browser storage is unavailable.
-  }
 }
 
 function HeaderSettingsModule({

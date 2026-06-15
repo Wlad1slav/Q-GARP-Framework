@@ -1,4 +1,5 @@
 import type { SupplementalMetricId } from "./analysis-types";
+import { readBrowserStorageItem, writeBrowserStorageItem } from "./browser-storage";
 
 export type SupplementalMetricSettings = Record<SupplementalMetricId, boolean>;
 
@@ -28,7 +29,7 @@ export function readAnalysisSettings(storageKey: string): AnalysisSettings {
   if (typeof window === "undefined") return DEFAULT_ANALYSIS_SETTINGS;
 
   try {
-    const raw = window.localStorage.getItem(storageKey);
+    const raw = readBrowserStorageItem(storageKey);
     return normalizeAnalysisSettings(raw ? JSON.parse(raw) : undefined);
   } catch {
     return DEFAULT_ANALYSIS_SETTINGS;
@@ -37,7 +38,7 @@ export function readAnalysisSettings(storageKey: string): AnalysisSettings {
 
 export function writeAnalysisSettings(storageKey: string, settings: AnalysisSettings) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(storageKey, JSON.stringify(normalizeAnalysisSettings(settings)));
+  writeBrowserStorageItem(storageKey, JSON.stringify(normalizeAnalysisSettings(settings)));
 }
 
 export function parseSectorWeightsFlag(value: string | null | undefined) {
