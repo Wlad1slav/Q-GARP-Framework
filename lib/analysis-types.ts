@@ -4,6 +4,8 @@ export type PeerSource = "actual" | "recommended" | "manual";
 export const supplementalMetricIds = [
   "totalShareholderYield",
   "fcfYield",
+  "payoutRatio",
+  "netDebtToEbitda",
   "impliedUpside",
   "fiftyTwoWeekRangePosition",
   "momentum",

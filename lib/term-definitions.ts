@@ -23,6 +23,10 @@ export const termDefinitions = {
     totalShareholderYield:
       "Total Shareholder Yield - дохідність повернення капіталу акціонерам: дивідендна дохідність плюс buyback yield.",
     fcfYield: "FCF yield - вільний грошовий потік відносно ринкової капіталізації.",
+    payoutRatio:
+      "Payout ratio - частка прибутку або FCF, яка йде на дивіденди. Вище 90% означає слабший запас міцності.",
+    netDebtToEbitda:
+      "Net debt / EBITDA - чистий борг відносно EBITDA. Вище 3x часто є жовтою зоною для asset-light бізнесу.",
     impliedUpside: "Implied upside - потенціал до медіанного target price аналітиків відносно поточної ціни.",
     fiftyTwoWeekRangePosition:
       "Позиція в 52-тижневому діапазоні - де поточна ціна між річним мінімумом і максимумом.",
@@ -49,6 +53,10 @@ export const termDefinitions = {
     totalShareholderYield:
       "Total Shareholder Yield - capital returned to shareholders: dividend yield plus buyback yield.",
     fcfYield: "FCF yield - free cash flow relative to market capitalization.",
+    payoutRatio:
+      "Payout ratio - the share of earnings or FCF paid as dividends. Above 90% means a thinner safety buffer.",
+    netDebtToEbitda:
+      "Net debt / EBITDA - net debt relative to EBITDA. Above 3x is often a watch zone for asset-light businesses.",
     impliedUpside: "Implied upside - analyst median target price potential relative to the current price.",
     fiftyTwoWeekRangePosition: "52-week range position - where the current price sits between the yearly low and high.",
     momentum: "Momentum - price trend versus its recent moving average.",
@@ -59,6 +67,8 @@ export type TermKey = keyof (typeof termDefinitions)["uk"];
 
 const labelMatchers: Array<[RegExp, TermKey]> = [
   [/P\/FCF/i, "pfcf"],
+  [/Net debt\s*\/\s*EBITDA/i, "netDebtToEbitda"],
+  [/Payout ratio/i, "payoutRatio"],
   [/FCF yield/i, "fcfYield"],
   [/Total Shareholder Yield/i, "totalShareholderYield"],
   [/Implied upside/i, "impliedUpside"],

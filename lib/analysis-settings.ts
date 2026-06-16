@@ -11,6 +11,8 @@ export type AnalysisSettings = {
 export const DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS: SupplementalMetricSettings = {
   totalShareholderYield: false,
   fcfYield: false,
+  payoutRatio: false,
+  netDebtToEbitda: false,
   impliedUpside: false,
   fiftyTwoWeekRangePosition: false,
   momentum: false,
@@ -80,6 +82,8 @@ function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & 
     return {
       totalShareholderYield: true,
       fcfYield: true,
+      payoutRatio: true,
+      netDebtToEbitda: true,
       impliedUpside: true,
       fiftyTwoWeekRangePosition: true,
       momentum: true,
@@ -98,6 +102,14 @@ function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & 
         : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.totalShareholderYield,
     fcfYield:
       typeof rawMetrics.fcfYield === "boolean" ? rawMetrics.fcfYield : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.fcfYield,
+    payoutRatio:
+      typeof rawMetrics.payoutRatio === "boolean"
+        ? rawMetrics.payoutRatio
+        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.payoutRatio,
+    netDebtToEbitda:
+      typeof rawMetrics.netDebtToEbitda === "boolean"
+        ? rawMetrics.netDebtToEbitda
+        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.netDebtToEbitda,
     impliedUpside:
       typeof rawMetrics.impliedUpside === "boolean"
         ? rawMetrics.impliedUpside

@@ -41,11 +41,17 @@ export async function getSupplementalMetrics(
   }
 
   const selectedMetricIds = normalizeSupplementalMetricIds(requestedMetricIds);
-  const needsCashFlow = selectedMetricIds.some((id) => id === "totalShareholderYield" || id === "fcfYield");
+  const needsCashFlow = selectedMetricIds.some(
+    (id) => id === "totalShareholderYield" || id === "fcfYield" || id === "payoutRatio",
+  );
   const needsMomentumHistory = selectedMetricIds.includes("momentum");
+  const quoteModules = ["price", "summaryDetail", "financialData"];
+  if (selectedMetricIds.includes("payoutRatio")) {
+    quoteModules.push("defaultKeyStatistics");
+  }
   const period1 = yearStart(-2);
   const [quoteSummary, trailingCashFlow, annualCashFlow, priceHistory] = await Promise.all([
-    getQuoteSummary(symbol, ["price", "summaryDetail", "financialData"], priority),
+    getQuoteSummary(symbol, quoteModules, priority),
     needsCashFlow ? getCashFlow(symbol, "trailing", period1, priority) : Promise.resolve([]),
     needsCashFlow ? getCashFlow(symbol, "annual", period1, priority) : Promise.resolve([]),
     needsMomentumHistory ? getPriceHistory(symbol, yearsAgo(2), priority) : Promise.resolve([]),
@@ -54,6 +60,7 @@ export async function getSupplementalMetrics(
   const price = asRecord(quoteSummary.price);
   const financialData = asRecord(quoteSummary.financialData);
   const summaryDetail = asRecord(quoteSummary.summaryDetail);
+  const keyStats = asRecord(quoteSummary.defaultKeyStatistics);
   const latestTrailingCashFlow = lastUsefulRow(trailingCashFlow, ["repurchaseOfCapitalStock", "freeCashFlow", "trailingFreeCashFlow"]);
   const latestAnnualCashFlow = lastUsefulRow(annualCashFlow, ["repurchaseOfCapitalStock", "freeCashFlow", "annualFreeCashFlow"]);
 
@@ -61,6 +68,9 @@ export async function getSupplementalMetrics(
   const currentPrice = firstNumber(financialData.currentPrice, price.regularMarketPrice);
   const marketCap = firstNumber(summaryDetail.marketCap, price.marketCap);
   const dividendYield = normalizeYield(firstNumber(summaryDetail.dividendYield));
+  const reportedPayoutRatio = firstNumber(summaryDetail.payoutRatio, keyStats.payoutRatio);
+  const dividendRate = firstNumber(summaryDetail.dividendRate, summaryDetail.trailingAnnualDividendRate, keyStats.lastDividendValue);
+  const sharesOutstanding = firstNumber(price.sharesOutstanding, keyStats.sharesOutstanding, summaryDetail.sharesOutstanding);
   const repurchaseOfCapitalStock = firstNumber(
     latestTrailingCashFlow?.repurchaseOfCapitalStock,
     latestTrailingCashFlow?.commonStockPayments,
@@ -77,6 +87,17 @@ export async function getSupplementalMetrics(
     latestAnnualCashFlow?.freeCashFlow,
     latestAnnualCashFlow?.annualFreeCashFlow,
   );
+  const annualDividendCash = multiplyIfFinite(dividendRate, sharesOutstanding);
+  const fcfPayoutRatio =
+    isFiniteNumber(annualDividendCash) && annualDividendCash >= 0 && isFiniteNumber(freeCashFlow) && freeCashFlow > 0
+      ? annualDividendCash / freeCashFlow
+      : undefined;
+  const payoutRatio = firstNumber(fcfPayoutRatio, reportedPayoutRatio);
+  const totalDebt = firstNumber(financialData.totalDebt);
+  const totalCash = firstNumber(financialData.totalCash);
+  const ebitda = firstNumber(financialData.ebitda);
+  const netDebt = subtractIfBoth(totalDebt, totalCash);
+  const netDebtToEbitda = isFiniteNumber(ebitda) && ebitda > 0 ? ratio(netDebt, ebitda) : undefined;
   const targetMedianPrice = firstNumber(financialData.targetMedianPrice);
   const fiftyTwoWeekLow = firstNumber(summaryDetail.fiftyTwoWeekLow);
   const fiftyTwoWeekHigh = firstNumber(summaryDetail.fiftyTwoWeekHigh);
@@ -117,6 +138,32 @@ export async function getSupplementalMetrics(
       id: "fcfYield",
       value: formatPercent(fcfYield, language),
       detail: formatCompactDetail("FCF", freeCashFlow, language),
+    },
+    payoutRatio: {
+      id: "payoutRatio",
+      value: formatPercent(payoutRatio, language),
+      detail: detailParts(
+        [
+          [copy.reportedPayout, formatPercent(reportedPayoutRatio, language)],
+          [copy.fcfPayout, formatPercent(fcfPayoutRatio, language)],
+          payoutRiskFlag(reportedPayoutRatio, fcfPayoutRatio, dividendRate, freeCashFlow, copy),
+        ],
+        language,
+        "; ",
+      ),
+    },
+    netDebtToEbitda: {
+      id: "netDebtToEbitda",
+      value: formatMultipleAllowingZero(netDebtToEbitda, language),
+      detail: detailParts(
+        [
+          [copy.netDebt, formatCompactValue(netDebt, language)],
+          [copy.ebitda, formatCompactValue(ebitda, language)],
+          isFiniteNumber(netDebtToEbitda) && netDebtToEbitda > 3 ? [copy.flag, copy.leverageWatchZone] : undefined,
+        ],
+        language,
+        "; ",
+      ),
     },
     impliedUpside: {
       id: "impliedUpside",
@@ -331,9 +378,12 @@ function sortRows(rows: StatementRow[]) {
   });
 }
 
-function detailParts(items: Array<[string, string]>, language: Language, separator = " + ") {
+function detailParts(items: Array<[string, string] | undefined>, language: Language, separator = " + ") {
   const emptyValue = analysisCopy[language].notAvailable;
-  const parts = items.filter(([, value]) => value !== emptyValue).map(([label, value]) => `${label} ${value}`);
+  const parts = items
+    .filter((item): item is [string, string] => Boolean(item))
+    .filter(([, value]) => value !== emptyValue)
+    .map(([label, value]) => `${label} ${value}`);
   return parts.length ? parts.join(separator) : undefined;
 }
 
@@ -349,6 +399,14 @@ function supplementalCopy(language: Language) {
       buyback: "buyback",
       price: "Price",
       target: "Target",
+      reportedPayout: "Reported",
+      fcfPayout: "FCF-based",
+      netDebt: "Net debt",
+      ebitda: "EBITDA",
+      flag: "Flag",
+      possibleDividendCut: "possible cut",
+      dividendNotCoveredByFcf: "FCF does not cover dividend",
+      leverageWatchZone: ">3x watch zone for asset-light businesses",
       twoHundredDayAverage: "200D avg",
       sourceNote: "Supplemental metrics: Yahoo Finance quoteSummary, price history, and cash-flow data.",
     };
@@ -359,14 +417,47 @@ function supplementalCopy(language: Language) {
     buyback: "викуп",
     price: "Ціна",
     target: "Таргет",
+    reportedPayout: "Reported",
+    fcfPayout: "На базі FCF",
+    netDebt: "Net debt",
+    ebitda: "EBITDA",
+    flag: "Прапорець",
+    possibleDividendCut: "можливе скорочення",
+    dividendNotCoveredByFcf: "FCF не покриває дивіденд",
+    leverageWatchZone: ">3x жовта зона для asset-light бізнесу",
     twoHundredDayAverage: "200D середня",
     sourceNote: "Додаткові метрики: Yahoo Finance quoteSummary, історія цін та cash-flow дані.",
   };
 }
 
+function payoutRiskFlag(
+  reportedPayoutRatio: number | undefined,
+  fcfPayoutRatio: number | undefined,
+  dividendRate: number | undefined,
+  freeCashFlow: number | undefined,
+  copy: ReturnType<typeof supplementalCopy>,
+): [string, string] | undefined {
+  if (isFiniteNumber(fcfPayoutRatio) && fcfPayoutRatio > 0.9) return [copy.flag, copy.possibleDividendCut];
+  if (isFiniteNumber(reportedPayoutRatio) && reportedPayoutRatio > 0.9) return [copy.flag, copy.possibleDividendCut];
+  if (isFiniteNumber(dividendRate) && dividendRate > 0 && isFiniteNumber(freeCashFlow) && freeCashFlow <= 0) {
+    return [copy.flag, copy.dividendNotCoveredByFcf];
+  }
+  return undefined;
+}
+
 function ratio(a?: number, b?: number) {
   if (!isFiniteNumber(a) || !isFiniteNumber(b) || b === 0) return undefined;
   return a / b;
+}
+
+function multiplyIfFinite(a?: number, b?: number) {
+  if (!isFiniteNumber(a) || !isFiniteNumber(b)) return undefined;
+  return a * b;
+}
+
+function subtractIfBoth(a?: number, b?: number) {
+  if (!isFiniteNumber(a) || !isFiniteNumber(b)) return undefined;
+  return a - b;
 }
 
 function addIfAny(...values: Array<number | undefined>) {
@@ -459,6 +550,18 @@ function formatCompact(value: number | undefined, language: Language) {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+function formatCompactValue(value: number | undefined, language: Language) {
+  return formatCompact(value, language) ?? analysisCopy[language].notAvailable;
+}
+
+function formatMultipleAllowingZero(value: number | undefined, language: Language) {
+  if (!isFiniteNumber(value)) return analysisCopy[language].notAvailable;
+  return `${new Intl.NumberFormat(localeForLanguage(language), {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: Math.abs(value) < 10 ? 1 : 0,
+  }).format(value)}x`;
 }
 
 function formatMoney(value: number | undefined, currency = "USD", language: Language) {

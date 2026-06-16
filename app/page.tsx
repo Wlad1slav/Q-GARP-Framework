@@ -80,6 +80,8 @@ const toneIcons = {
 const supplementalMetricIcons = {
   totalShareholderYield: BadgeDollarSign,
   fcfYield: Calculator,
+  payoutRatio: ShieldCheck,
+  netDebtToEbitda: Calculator,
   impliedUpside: TrendingUp,
   fiftyTwoWeekRangePosition: BarChart3,
   momentum: TrendingUp,
@@ -98,6 +100,8 @@ const supplementalMetricsCopy = {
     metrics: {
       totalShareholderYield: "Total Shareholder Yield",
       fcfYield: "FCF yield",
+      payoutRatio: "Payout ratio",
+      netDebtToEbitda: "Net debt / EBITDA",
       impliedUpside: "Implied upside",
       fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
       momentum: "Momentum",
@@ -110,6 +114,8 @@ const supplementalMetricsCopy = {
     metrics: {
       totalShareholderYield: "Total Shareholder Yield",
       fcfYield: "FCF yield",
+      payoutRatio: "Payout ratio",
+      netDebtToEbitda: "Net debt / EBITDA",
       impliedUpside: "Implied upside",
       fiftyTwoWeekRangePosition: "52-week range position",
       momentum: "Momentum",

@@ -74,6 +74,8 @@ const supplementalMetricsCopy = {
   uk: {
     totalShareholderYield: "Total Shareholder Yield",
     fcfYield: "FCF yield",
+    payoutRatio: "Payout ratio",
+    netDebtToEbitda: "Net debt / EBITDA",
     impliedUpside: "Implied upside",
     fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
     momentum: "Momentum",
@@ -81,6 +83,8 @@ const supplementalMetricsCopy = {
   en: {
     totalShareholderYield: "Total Shareholder Yield",
     fcfYield: "FCF yield",
+    payoutRatio: "Payout ratio",
+    netDebtToEbitda: "Net debt / EBITDA",
     impliedUpside: "Implied upside",
     fiftyTwoWeekRangePosition: "52-week range position",
     momentum: "Momentum",
