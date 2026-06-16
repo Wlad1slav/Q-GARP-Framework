@@ -25,7 +25,6 @@ import {
   readAnalysisSettings,
   sectorWeightsSearchParam,
   SECTOR_WEIGHTS_QUERY_PARAM,
-  writeAnalysisSettings,
   type SupplementalMetricSettings,
 } from "@/lib/analysis-settings";
 import type {
@@ -365,10 +364,6 @@ export default function Home() {
     document.documentElement.lang = language;
     writeBrowserStorageItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
-
-  useEffect(() => {
-    writeAnalysisSettings(APP_SETTINGS_STORAGE_KEY, { useSectorWeights, supplementalMetrics: supplementalMetricSettings });
-  }, [supplementalMetricSettings, useSectorWeights]);
 
   useEffect(() => {
     function handleAnalysisRequest(event: Event) {

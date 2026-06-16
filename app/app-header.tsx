@@ -8,6 +8,7 @@ import { FormEvent, useEffect, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
   DEFAULT_ANALYSIS_SETTINGS,
+  parseSectorWeightsFlag,
   readAnalysisSettings,
   SECTOR_WEIGHTS_QUERY_PARAM,
   sectorWeightsSearchParam,
@@ -21,6 +22,7 @@ import {
   APP_ANALYSIS_SETTINGS_CHANGE_EVENT,
   APP_ANALYSIS_STATUS_EVENT,
   APP_LANGUAGE_CHANGE_EVENT,
+  type AppAnalysisSettingsChangeDetail,
   type AppAnalysisStatusDetail,
 } from "@/lib/app-events";
 import { readBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
@@ -111,7 +113,7 @@ export function AppHeader() {
       const params = new URLSearchParams(window.location.search);
       const initialLanguage = normalizeLanguage(params.get("lang") ?? readBrowserStorageItem(LANGUAGE_STORAGE_KEY));
       const initialTicker = normalizeTicker(params.get("ticker") ?? "");
-      const settings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
+      const settings = readSettingsForCurrentUrl(params);
 
       setLanguage(initialLanguage);
       setTicker(initialTicker);
@@ -160,6 +162,19 @@ export function AppHeader() {
     return () => window.removeEventListener(APP_ANALYSIS_STATUS_EVENT, handleAnalysisStatus);
   }, []);
 
+  useEffect(() => {
+    function handleSettingsChange(event: Event) {
+      const detail = (event as CustomEvent<AppAnalysisSettingsChangeDetail>).detail;
+      if (!detail?.settings) return;
+
+      setUseSectorWeights(detail.settings.useSectorWeights);
+      setSupplementalMetricSettings(detail.settings.supplementalMetrics);
+    }
+
+    window.addEventListener(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, handleSettingsChange);
+    return () => window.removeEventListener(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, handleSettingsChange);
+  }, []);
+
   function currentSettings(): AnalysisSettings {
     return {
       useSectorWeights,
@@ -206,10 +221,21 @@ export function AppHeader() {
     window.dispatchEvent(new CustomEvent(APP_LANGUAGE_CHANGE_EVENT, { detail: { language: nextLanguage } }));
   }
 
+  function syncCurrentAnalysisUrl(nextSettings: AnalysisSettings) {
+    if (window.location.pathname !== "/") return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("ticker") && !params.has(SECTOR_WEIGHTS_QUERY_PARAM)) return;
+
+    params.set(SECTOR_WEIGHTS_QUERY_PARAM, sectorWeightsSearchParam(nextSettings.useSectorWeights));
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  }
+
   function commitSettings(nextSettings: AnalysisSettings) {
     setUseSectorWeights(nextSettings.useSectorWeights);
     setSupplementalMetricSettings(nextSettings.supplementalMetrics);
     writeAnalysisSettings(APP_SETTINGS_STORAGE_KEY, nextSettings);
+    syncCurrentAnalysisUrl(nextSettings);
     window.dispatchEvent(new CustomEvent(APP_ANALYSIS_SETTINGS_CHANGE_EVENT, { detail: { settings: nextSettings } }));
   }
 
@@ -348,6 +374,19 @@ export function AppHeader() {
       ) : null}
     </div>
   );
+}
+
+function readSettingsForCurrentUrl(params: URLSearchParams): AnalysisSettings {
+  const storedSettings = readAnalysisSettings(APP_SETTINGS_STORAGE_KEY);
+
+  if (window.location.pathname !== "/" || !params.has(SECTOR_WEIGHTS_QUERY_PARAM)) {
+    return storedSettings;
+  }
+
+  return {
+    ...storedSettings,
+    useSectorWeights: parseSectorWeightsFlag(params.get(SECTOR_WEIGHTS_QUERY_PARAM)),
+  };
 }
 
 function HeaderNavLinks({
