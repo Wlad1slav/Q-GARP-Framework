@@ -1,4 +1,4 @@
-import type { SupplementalMetricId } from "./analysis-types";
+import { supplementalMetricIds, type SupplementalMetricId } from "./analysis-types";
 import { readBrowserStorageItem, writeBrowserStorageItem } from "./browser-storage";
 
 export type SupplementalMetricSettings = Record<SupplementalMetricId, boolean>;
@@ -8,15 +8,7 @@ export type AnalysisSettings = {
   supplementalMetrics: SupplementalMetricSettings;
 };
 
-export const DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS: SupplementalMetricSettings = {
-  totalShareholderYield: false,
-  fcfYield: false,
-  payoutRatio: false,
-  netDebtToEbitda: false,
-  impliedUpside: false,
-  fiftyTwoWeekRangePosition: false,
-  momentum: false,
-};
+export const DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS: SupplementalMetricSettings = supplementalMetricSettingsWith(false);
 
 export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
   useSectorWeights: true,
@@ -79,15 +71,7 @@ function normalizeAnalysisSettings(value: unknown): AnalysisSettings {
 
 function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & { showSupplementalMetrics?: unknown }) {
   if (value.showSupplementalMetrics === true) {
-    return {
-      totalShareholderYield: true,
-      fcfYield: true,
-      payoutRatio: true,
-      netDebtToEbitda: true,
-      impliedUpside: true,
-      fiftyTwoWeekRangePosition: true,
-      momentum: true,
-    };
+    return supplementalMetricSettingsWith(true);
   }
 
   const rawMetrics = value.supplementalMetrics;
@@ -95,30 +79,16 @@ function normalizeSupplementalMetricSettings(value: Partial<AnalysisSettings> & 
     return DEFAULT_ANALYSIS_SETTINGS.supplementalMetrics;
   }
 
-  return {
-    totalShareholderYield:
-      typeof rawMetrics.totalShareholderYield === "boolean"
-        ? rawMetrics.totalShareholderYield
-        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.totalShareholderYield,
-    fcfYield:
-      typeof rawMetrics.fcfYield === "boolean" ? rawMetrics.fcfYield : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.fcfYield,
-    payoutRatio:
-      typeof rawMetrics.payoutRatio === "boolean"
-        ? rawMetrics.payoutRatio
-        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.payoutRatio,
-    netDebtToEbitda:
-      typeof rawMetrics.netDebtToEbitda === "boolean"
-        ? rawMetrics.netDebtToEbitda
-        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.netDebtToEbitda,
-    impliedUpside:
-      typeof rawMetrics.impliedUpside === "boolean"
-        ? rawMetrics.impliedUpside
-        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.impliedUpside,
-    fiftyTwoWeekRangePosition:
-      typeof rawMetrics.fiftyTwoWeekRangePosition === "boolean"
-        ? rawMetrics.fiftyTwoWeekRangePosition
-        : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.fiftyTwoWeekRangePosition,
-    momentum:
-      typeof rawMetrics.momentum === "boolean" ? rawMetrics.momentum : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS.momentum,
-  };
+  const normalized = {} as SupplementalMetricSettings;
+  const metrics = rawMetrics as Partial<Record<SupplementalMetricId, unknown>>;
+  for (const metricId of supplementalMetricIds) {
+    const metricValue = metrics[metricId];
+    normalized[metricId] =
+      typeof metricValue === "boolean" ? metricValue : DEFAULT_SUPPLEMENTAL_METRIC_SETTINGS[metricId];
+  }
+  return normalized;
+}
+
+function supplementalMetricSettingsWith(enabled: boolean) {
+  return Object.fromEntries(supplementalMetricIds.map((metricId) => [metricId, enabled])) as SupplementalMetricSettings;
 }

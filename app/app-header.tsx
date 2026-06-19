@@ -81,6 +81,8 @@ const supplementalMetricsCopy = {
     impliedUpside: "Implied upside",
     fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
     momentum: "Momentum",
+    analystSignal: "Сигнал аналітиків",
+    epsRevisionTrend: "Тренд EPS-прогнозу",
   },
   en: {
     totalShareholderYield: "Total Shareholder Yield",
@@ -90,6 +92,8 @@ const supplementalMetricsCopy = {
     impliedUpside: "Implied upside",
     fiftyTwoWeekRangePosition: "52-week range position",
     momentum: "Momentum",
+    analystSignal: "Analyst signal",
+    epsRevisionTrend: "EPS revision trend",
   },
 } satisfies Record<Language, Record<SupplementalMetricId, string>>;
 

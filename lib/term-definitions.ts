@@ -31,6 +31,10 @@ export const termDefinitions = {
     fiftyTwoWeekRangePosition:
       "Позиція в 52-тижневому діапазоні - де поточна ціна між річним мінімумом і максимумом.",
     momentum: "Momentum - тренд ціни відносно її нещодавнього середнього значення.",
+    analystSignal:
+      "Сигнал аналітиків - consensus-рекомендація Yahoo Finance, recommendationMean за шкалою 1-5, де менше значення краще, і кількість аналітичних думок.",
+    epsRevisionTrend:
+      "Тренд EPS-прогнозу - зміна поточного прогнозу EPS проти значення 30 днів тому; позитивна різниця означає перегляд вгору.",
   },
   en: {
     cagr: "CAGR - compound annual growth rate. Shows the steady annual pace a metric would need to grow over a period.",
@@ -60,6 +64,10 @@ export const termDefinitions = {
     impliedUpside: "Implied upside - analyst median target price potential relative to the current price.",
     fiftyTwoWeekRangePosition: "52-week range position - where the current price sits between the yearly low and high.",
     momentum: "Momentum - price trend versus its recent moving average.",
+    analystSignal:
+      "Analyst signal - Yahoo Finance consensus recommendation, recommendationMean on a 1-5 scale where lower is better, and the analyst opinion count.",
+    epsRevisionTrend:
+      "EPS revision trend - the current EPS estimate versus the estimate 30 days ago; a positive difference means estimates moved up.",
   },
 } as const satisfies Record<Language, Record<string, string>>;
 
@@ -73,6 +81,8 @@ const labelMatchers: Array<[RegExp, TermKey]> = [
   [/Total Shareholder Yield/i, "totalShareholderYield"],
   [/Implied upside/i, "impliedUpside"],
   [/52-тижнев|52-week/i, "fiftyTwoWeekRangePosition"],
+  [/Сигнал аналітиків|Analyst signal/i, "analystSignal"],
+  [/Тренд EPS-прогнозу|EPS revision trend/i, "epsRevisionTrend"],
   [/P\/S/i, "ps"],
   [/Momentum/i, "momentum"],
   [/P\/E/i, "pe"],

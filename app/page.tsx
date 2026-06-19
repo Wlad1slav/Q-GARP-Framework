@@ -84,6 +84,8 @@ const supplementalMetricIcons = {
   impliedUpside: TrendingUp,
   fiftyTwoWeekRangePosition: BarChart3,
   momentum: TrendingUp,
+  analystSignal: UsersRound,
+  epsRevisionTrend: TrendingUp,
 } satisfies Record<SupplementalMetricId, typeof TrendingUp>;
 
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v3";
@@ -104,6 +106,8 @@ const supplementalMetricsCopy = {
       impliedUpside: "Implied upside",
       fiftyTwoWeekRangePosition: "Позиція в 52-тижневому діапазоні",
       momentum: "Momentum",
+      analystSignal: "Сигнал аналітиків",
+      epsRevisionTrend: "Тренд EPS-прогнозу",
     },
   },
   en: {
@@ -118,6 +122,8 @@ const supplementalMetricsCopy = {
       impliedUpside: "Implied upside",
       fiftyTwoWeekRangePosition: "52-week range position",
       momentum: "Momentum",
+      analystSignal: "Analyst signal",
+      epsRevisionTrend: "EPS revision trend",
     },
   },
 } satisfies Record<
@@ -686,7 +692,10 @@ function SupplementalMetricsPanel({
         const Icon = supplementalMetricIcons[id];
 
         return (
-          <article className={`supplementalMetric ${id === "momentum" ? "supplementalMetricWide" : ""}`} key={id}>
+          <article
+            className={`supplementalMetric ${id === "momentum" || id === "epsRevisionTrend" ? "supplementalMetricWide" : ""}`}
+            key={id}
+          >
             <div className="supplementalMetricTop">
               <span className="supplementalMetricIcon" aria-hidden="true">
                 <Icon size={17} />
@@ -770,19 +779,19 @@ function SupplementalMetricChart({
   const firstPoint = points[0];
   const lastPoint = points[points.length - 1];
   const latestAverage = [...points].reverse().find((point) => isFiniteChartNumber(point.average))?.average;
-  const title = `${chart.priceLabel}: ${formatChartMoney(lastPoint.price, chart.currency, language)}`;
+  const title = `${chart.priceLabel}: ${formatChartValue(lastPoint.price, chart, language)}`;
 
   return (
     <figure className="momentumChart" aria-label={title}>
       <div className="momentumChartLegend">
         <span>
           <i className="momentumLegendSwatch price" aria-hidden="true" />
-          {chart.priceLabel}: {formatChartMoney(lastPoint.price, chart.currency, language)}
+          {chart.priceLabel}: {formatChartValue(lastPoint.price, chart, language)}
         </span>
         {isFiniteChartNumber(latestAverage) ? (
           <span>
             <i className="momentumLegendSwatch average" aria-hidden="true" />
-            {chart.averageLabel}: {formatChartMoney(latestAverage, chart.currency, language)}
+            {chart.averageLabel}: {formatChartValue(latestAverage, chart, language)}
           </span>
         ) : null}
       </div>
@@ -793,10 +802,21 @@ function SupplementalMetricChart({
         <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
         {averagePath ? <path className="momentumChartAverage" d={averagePath} /> : null}
         <path className="momentumChartPrice" d={pricePath} />
+        {chart.showPoints
+          ? points.map((point, index) => (
+              <circle
+                className="momentumChartDot"
+                cx={xFor(point, index)}
+                cy={yFor(point.price)}
+                key={`${point.date}-${index}`}
+                r="3.5"
+              />
+            ))
+          : null}
       </svg>
       <div className="momentumChartAxis" aria-hidden="true">
-        <span>{formatChartDate(firstPoint.date, language)}</span>
-        <span>{formatChartDate(lastPoint.date, language)}</span>
+        <span>{firstPoint.label ?? formatChartDate(firstPoint.date, language)}</span>
+        <span>{lastPoint.label ?? formatChartDate(lastPoint.date, language)}</span>
       </div>
     </figure>
   );
@@ -1222,6 +1242,21 @@ function svgPath(points: Array<{ x: number; y: number }>) {
 
 function isFiniteChartNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatChartValue(
+  value: number,
+  chart: NonNullable<SupplementalMetricResult["chart"]>,
+  language: Language,
+) {
+  if (chart.valueFormat === "number") {
+    return new Intl.NumberFormat(localeForLanguage(language), {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: Math.abs(value) < 10 ? 2 : 0,
+    }).format(value);
+  }
+
+  return formatChartMoney(value, chart.currency, language);
 }
 
 function formatChartMoney(value: number, currency = "USD", language: Language) {

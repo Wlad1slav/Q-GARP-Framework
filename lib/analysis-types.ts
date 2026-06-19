@@ -9,6 +9,8 @@ export const supplementalMetricIds = [
   "impliedUpside",
   "fiftyTwoWeekRangePosition",
   "momentum",
+  "analystSignal",
+  "epsRevisionTrend",
 ] as const;
 
 export type SupplementalMetricId = (typeof supplementalMetricIds)[number];
@@ -67,12 +69,15 @@ export interface SupplementalMetricResult {
 
 export interface SupplementalMetricChartPoint {
   date: string;
+  label?: string;
   price: number;
   average?: number;
 }
 
 export interface SupplementalMetricChart {
   currency?: string;
+  showPoints?: boolean;
+  valueFormat?: "money" | "number";
   priceLabel: string;
   averageLabel: string;
   points: SupplementalMetricChartPoint[];

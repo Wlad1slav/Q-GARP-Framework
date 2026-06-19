@@ -22,7 +22,16 @@ type PriceHistoryPoint = {
   close: number;
 };
 
+type EpsRevisionTrend = {
+  current: number;
+  thirtyDaysAgo: number;
+  delta: number;
+  points: SupplementalMetricChartPoint[];
+  period?: string;
+};
+
 const TWO_HUNDRED_DAY_WINDOW = 200;
+const EPS_REVISION_FLAT_THRESHOLD = 0.005;
 
 const yahooFinance = new YahooFinance({
   suppressNotices: ["yahooSurvey", "ripHistorical"],
@@ -45,9 +54,13 @@ export async function getSupplementalMetrics(
     (id) => id === "totalShareholderYield" || id === "fcfYield" || id === "payoutRatio",
   );
   const needsMomentumHistory = selectedMetricIds.includes("momentum");
+  const needsEarningsTrend = selectedMetricIds.includes("epsRevisionTrend");
   const quoteModules = ["price", "summaryDetail", "financialData"];
   if (selectedMetricIds.includes("payoutRatio")) {
     quoteModules.push("defaultKeyStatistics");
+  }
+  if (needsEarningsTrend) {
+    quoteModules.push("earningsTrend");
   }
   const period1 = yearStart(-2);
   const [quoteSummary, trailingCashFlow, annualCashFlow, priceHistory] = await Promise.all([
@@ -61,6 +74,7 @@ export async function getSupplementalMetrics(
   const financialData = asRecord(quoteSummary.financialData);
   const summaryDetail = asRecord(quoteSummary.summaryDetail);
   const keyStats = asRecord(quoteSummary.defaultKeyStatistics);
+  const earningsTrend = asRecord(quoteSummary.earningsTrend);
   const latestTrailingCashFlow = lastUsefulRow(trailingCashFlow, ["repurchaseOfCapitalStock", "freeCashFlow", "trailingFreeCashFlow"]);
   const latestAnnualCashFlow = lastUsefulRow(annualCashFlow, ["repurchaseOfCapitalStock", "freeCashFlow", "annualFreeCashFlow"]);
 
@@ -99,6 +113,9 @@ export async function getSupplementalMetrics(
   const netDebt = subtractIfBoth(totalDebt, totalCash);
   const netDebtToEbitda = isFiniteNumber(ebitda) && ebitda > 0 ? ratio(netDebt, ebitda) : undefined;
   const targetMedianPrice = firstNumber(financialData.targetMedianPrice);
+  const recommendationKey = stringOrUndefined(financialData.recommendationKey)?.toLowerCase();
+  const recommendationMean = firstNumber(financialData.recommendationMean);
+  const numberOfAnalystOpinions = firstNumber(financialData.numberOfAnalystOpinions);
   const fiftyTwoWeekLow = firstNumber(summaryDetail.fiftyTwoWeekLow);
   const fiftyTwoWeekHigh = firstNumber(summaryDetail.fiftyTwoWeekHigh);
   const twoHundredDayAverage = firstNumber(summaryDetail.twoHundredDayAverage, financialData.twoHundredDayAverage);
@@ -121,6 +138,7 @@ export async function getSupplementalMetrics(
       ? (currentPrice - twoHundredDayAverage) / twoHundredDayAverage
       : undefined;
   const copy = supplementalCopy(language);
+  const epsRevisionTrend = buildEpsRevisionTrend(earningsTrend);
   const momentumChart = buildMomentumChart(priceHistory, twoHundredDayAverage, currency, copy);
   const metricsById = {
     totalShareholderYield: {
@@ -190,6 +208,43 @@ export async function getSupplementalMetrics(
         "; ",
       ),
       chart: momentumChart,
+    },
+    analystSignal: {
+      id: "analystSignal",
+      value: recommendationKey ?? analysisCopy[language].notAvailable,
+      detail: detailParts(
+        [
+          [copy.recommendationMean, formatRecommendationMean(recommendationMean, language)],
+          [copy.analystOpinions, formatInteger(numberOfAnalystOpinions, language)],
+        ],
+        language,
+        "; ",
+      ),
+    },
+    epsRevisionTrend: {
+      id: "epsRevisionTrend",
+      value: formatEpsRevisionSignal(epsRevisionTrend?.delta, copy, language),
+      detail: epsRevisionTrend
+        ? detailParts(
+            [
+              [copy.epsCurrent, formatEpsValue(epsRevisionTrend.current, language)],
+              [copy.epsThirtyDaysAgo, formatEpsValue(epsRevisionTrend.thirtyDaysAgo, language)],
+              [copy.epsDelta, formatSignedEpsValue(epsRevisionTrend.delta, language)],
+              epsRevisionTrend.period ? [copy.epsPeriod, epsRevisionTrend.period] : undefined,
+            ],
+            language,
+            "; ",
+          )
+        : undefined,
+      chart: epsRevisionTrend
+        ? {
+            showPoints: true,
+            valueFormat: "number",
+            priceLabel: copy.epsEstimate,
+            averageLabel: "",
+            points: epsRevisionTrend.points,
+          }
+        : undefined,
     },
   } satisfies Record<SupplementalMetricId, SupplementalMetricResult>;
 
@@ -378,6 +433,54 @@ function sortRows(rows: StatementRow[]) {
   });
 }
 
+function buildEpsRevisionTrend(earningsTrend: AnyRecord): EpsRevisionTrend | undefined {
+  const rows = Array.isArray(earningsTrend.trend) ? earningsTrend.trend.filter(isRecord) : [];
+  const values = rows
+    .map((row) => epsRevisionTrendFromRow(row))
+    .filter((row): row is EpsRevisionTrend => Boolean(row));
+
+  return values.find((row) => row.period === "+1y") ?? values.find((row) => row.period === "0y") ?? values[0];
+}
+
+function epsRevisionTrendFromRow(row: AnyRecord): EpsRevisionTrend | undefined {
+  const epsTrend = asRecord(row.epsTrend);
+  const current = firstNumber(epsTrend.current);
+  const thirtyDaysAgo = firstNumber(epsTrend["30daysAgo"]);
+  if (!isFiniteNumber(current) || !isFiniteNumber(thirtyDaysAgo)) return undefined;
+
+  return {
+    current,
+    thirtyDaysAgo,
+    delta: current - thirtyDaysAgo,
+    points: epsTrendChartPoints(epsTrend),
+    period: stringOrUndefined(row.period),
+  };
+}
+
+function epsTrendChartPoints(epsTrend: AnyRecord): SupplementalMetricChartPoint[] {
+  const values: Array<[string, unknown]> = [
+    ["90d ago", epsTrend["90daysAgo"]],
+    ["60d ago", epsTrend["60daysAgo"]],
+    ["30d ago", epsTrend["30daysAgo"]],
+    ["7d ago", epsTrend["7daysAgo"]],
+    ["Current", epsTrend.current],
+  ];
+
+  const points: SupplementalMetricChartPoint[] = [];
+  for (const [label, value] of values) {
+    const parsed = firstNumber(value);
+    if (!isFiniteNumber(parsed)) continue;
+
+    points.push({
+      date: label,
+      label,
+      price: roundChartNumber(parsed),
+    });
+  }
+
+  return points;
+}
+
 function detailParts(items: Array<[string, string] | undefined>, language: Language, separator = " + ") {
   const emptyValue = analysisCopy[language].notAvailable;
   const parts = items
@@ -390,6 +493,49 @@ function detailParts(items: Array<[string, string] | undefined>, language: Langu
 function formatCompactDetail(label: string, value: number | undefined, language: Language) {
   const formatted = formatCompact(value, language);
   return formatted ? `${label} ${formatted}` : undefined;
+}
+
+function formatRecommendationMean(value: number | undefined, language: Language) {
+  const formatted = formatNumber(value, language, {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  });
+  return formatted === analysisCopy[language].notAvailable ? formatted : `${formatted}/5`;
+}
+
+function formatInteger(value: number | undefined, language: Language) {
+  return formatNumber(value, language, {
+    maximumFractionDigits: 0,
+  });
+}
+
+function formatEpsValue(value: number | undefined, language: Language) {
+  return formatNumber(value, language, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  });
+}
+
+function formatSignedEpsValue(value: number | undefined, language: Language) {
+  if (!isFiniteNumber(value)) return analysisCopy[language].notAvailable;
+  const formatted = formatEpsValue(value, language);
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
+function formatEpsRevisionSignal(
+  delta: number | undefined,
+  copy: ReturnType<typeof supplementalCopy>,
+  language: Language,
+) {
+  if (!isFiniteNumber(delta)) return analysisCopy[language].notAvailable;
+  if (delta > EPS_REVISION_FLAT_THRESHOLD) return copy.epsTrendUp;
+  if (delta < -EPS_REVISION_FLAT_THRESHOLD) return copy.epsTrendDown;
+  return copy.epsTrendFlat;
+}
+
+function formatNumber(value: number | undefined, language: Language, options: Intl.NumberFormatOptions) {
+  if (!isFiniteNumber(value)) return analysisCopy[language].notAvailable;
+  return new Intl.NumberFormat(localeForLanguage(language), options).format(value);
 }
 
 function supplementalCopy(language: Language) {
@@ -408,7 +554,17 @@ function supplementalCopy(language: Language) {
       dividendNotCoveredByFcf: "FCF does not cover dividend",
       leverageWatchZone: ">3x watch zone for asset-light businesses",
       twoHundredDayAverage: "200D avg",
-      sourceNote: "Supplemental metrics: Yahoo Finance quoteSummary, price history, and cash-flow data.",
+      recommendationMean: "Mean",
+      analystOpinions: "Analysts",
+      epsCurrent: "Current",
+      epsEstimate: "EPS estimate",
+      epsThirtyDaysAgo: "30d ago",
+      epsDelta: "Delta",
+      epsPeriod: "Period",
+      epsTrendUp: "Up",
+      epsTrendDown: "Down",
+      epsTrendFlat: "Flat",
+      sourceNote: "Supplemental metrics: Yahoo Finance quoteSummary, earningsTrend, price history, and cash-flow data.",
     };
   }
 
@@ -426,7 +582,17 @@ function supplementalCopy(language: Language) {
     dividendNotCoveredByFcf: "FCF не покриває дивіденд",
     leverageWatchZone: ">3x жовта зона для asset-light бізнесу",
     twoHundredDayAverage: "200D середня",
-    sourceNote: "Додаткові метрики: Yahoo Finance quoteSummary, історія цін та cash-flow дані.",
+    recommendationMean: "Mean",
+    analystOpinions: "Аналітиків",
+    epsCurrent: "Зараз",
+    epsEstimate: "EPS прогноз",
+    epsThirtyDaysAgo: "30 днів тому",
+    epsDelta: "Delta",
+    epsPeriod: "Період",
+    epsTrendUp: "Вгору",
+    epsTrendDown: "Вниз",
+    epsTrendFlat: "Без змін",
+    sourceNote: "Додаткові метрики: Yahoo Finance quoteSummary, earningsTrend, історія цін та cash-flow дані.",
   };
 }
 
