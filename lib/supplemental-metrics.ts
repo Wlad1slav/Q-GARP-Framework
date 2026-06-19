@@ -53,7 +53,7 @@ export async function getSupplementalMetrics(
   const needsCashFlow = selectedMetricIds.some(
     (id) => id === "totalShareholderYield" || id === "fcfYield" || id === "payoutRatio",
   );
-  const needsMomentumHistory = selectedMetricIds.includes("momentum");
+  const needsPriceHistory = selectedMetricIds.some((id) => id === "impliedUpside" || id === "momentum");
   const needsEarningsTrend = selectedMetricIds.includes("epsRevisionTrend");
   const quoteModules = ["price", "summaryDetail", "financialData"];
   if (selectedMetricIds.includes("payoutRatio")) {
@@ -67,7 +67,7 @@ export async function getSupplementalMetrics(
     getQuoteSummary(symbol, quoteModules, priority),
     needsCashFlow ? getCashFlow(symbol, "trailing", period1, priority) : Promise.resolve([]),
     needsCashFlow ? getCashFlow(symbol, "annual", period1, priority) : Promise.resolve([]),
-    needsMomentumHistory ? getPriceHistory(symbol, yearsAgo(2), priority) : Promise.resolve([]),
+    needsPriceHistory ? getPriceHistory(symbol, yearsAgo(2), priority) : Promise.resolve([]),
   ]);
 
   const price = asRecord(quoteSummary.price);
@@ -139,6 +139,7 @@ export async function getSupplementalMetrics(
       : undefined;
   const copy = supplementalCopy(language);
   const epsRevisionTrend = buildEpsRevisionTrend(earningsTrend);
+  const impliedUpsideChart = buildImpliedUpsideChart(priceHistory, currentPrice, targetMedianPrice, currency, copy);
   const momentumChart = buildMomentumChart(priceHistory, twoHundredDayAverage, currency, copy);
   const metricsById = {
     totalShareholderYield: {
@@ -187,6 +188,7 @@ export async function getSupplementalMetrics(
       id: "impliedUpside",
       value: formatPercent(impliedUpside, language),
       detail: targetMedianPrice ? `${copy.target} ${formatMoney(targetMedianPrice, currency, language)}` : undefined,
+      chart: impliedUpsideChart,
     },
     fiftyTwoWeekRangePosition: {
       id: "fiftyTwoWeekRangePosition",
@@ -367,6 +369,59 @@ function buildMomentumChart(
     priceLabel: copy.price,
     averageLabel: copy.twoHundredDayAverage,
     points,
+  };
+}
+
+function buildImpliedUpsideChart(
+  prices: PriceHistoryPoint[],
+  currentPrice: number | undefined,
+  targetMedianPrice: number | undefined,
+  currency: string | undefined,
+  copy: ReturnType<typeof supplementalCopy>,
+): SupplementalMetricResult["chart"] {
+  if (!isFiniteNumber(targetMedianPrice) || targetMedianPrice <= 0) return undefined;
+
+  const now = new Date();
+  const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const yearEnd = new Date(Date.UTC(now.getUTCFullYear(), 11, 31));
+  const points = [...prices]
+    .sort((left, right) => left.date.getTime() - right.date.getTime())
+    .filter((point) => point.date.getTime() >= yearStart.getTime() && point.date.getTime() <= today.getTime())
+    .map((point): SupplementalMetricChartPoint & { time: number } => ({
+      date: point.date.toISOString().slice(0, 10),
+      price: roundChartNumber(point.close),
+      time: point.date.getTime(),
+    }))
+    .filter((point) => isFiniteNumber(point.price));
+
+  if (isFiniteNumber(currentPrice) && currentPrice > 0) {
+    const currentPoint = {
+      date: today.toISOString().slice(0, 10),
+      price: roundChartNumber(currentPrice),
+      time: today.getTime(),
+    };
+    const lastPoint = points[points.length - 1];
+
+    if (!lastPoint || currentPoint.time > lastPoint.time) {
+      points.push(currentPoint);
+    } else if (currentPoint.date === lastPoint.date) {
+      lastPoint.price = currentPoint.price;
+    }
+  }
+
+  if (points.length < 2) return undefined;
+
+  return {
+    currency,
+    target: roundChartNumber(targetMedianPrice),
+    targetDate: yearEnd.toISOString().slice(0, 10),
+    priceLabel: copy.price,
+    averageLabel: copy.target,
+    points: points.map((point) => ({
+      date: point.date,
+      price: point.price,
+    })),
   };
 }
 

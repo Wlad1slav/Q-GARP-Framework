@@ -77,6 +77,8 @@ export interface SupplementalMetricChartPoint {
 export interface SupplementalMetricChart {
   currency?: string;
   showPoints?: boolean;
+  target?: number;
+  targetDate?: string;
   valueFormat?: "money" | "number";
   priceLabel: string;
   averageLabel: string;

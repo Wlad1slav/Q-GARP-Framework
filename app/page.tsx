@@ -89,7 +89,7 @@ const supplementalMetricIcons = {
 } satisfies Record<SupplementalMetricId, typeof TrendingUp>;
 
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v3";
-const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v1";
+const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v2";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
 const MAX_STORED_SUPPLEMENTAL_RESULTS = 80;
@@ -682,48 +682,178 @@ function SupplementalMetricsPanel({
 }) {
   const t = supplementalMetricsCopy[language];
   const dataNotes = Array.from(new Set(enabledMetricIds.flatMap((id) => notes[id] ?? [])));
+  const hasUpsideAndAnalyst =
+    enabledMetricIds.includes("impliedUpside") && enabledMetricIds.includes("analystSignal");
+  const impliedUpsideIndex = supplementalMetricIds.indexOf("impliedUpside");
+  const leadingMetricIds = hasUpsideAndAnalyst
+    ? enabledMetricIds.filter((id) => supplementalMetricIds.indexOf(id) < impliedUpsideIndex)
+    : enabledMetricIds;
+  const trailingMetricIds = hasUpsideAndAnalyst
+    ? enabledMetricIds.filter(
+        (id) =>
+          id !== "impliedUpside" &&
+          id !== "analystSignal" &&
+          supplementalMetricIds.indexOf(id) > impliedUpsideIndex,
+      )
+    : [];
+
+  function renderMetric(id: SupplementalMetricId, className = "") {
+    const metric = metrics[id];
+    const error = errors[id];
+    const isLoading = Boolean(loading[id]);
+    const Icon = supplementalMetricIcons[id];
+    const isWide = id === "momentum" || id === "epsRevisionTrend";
+    const articleClassName = [
+      "supplementalMetric",
+      isWide ? "supplementalMetricWide" : "",
+      id === "impliedUpside" && !className ? "supplementalMetricWide" : "",
+      className,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return (
+      <article className={articleClassName} key={id}>
+        <div className="supplementalMetricTop">
+          <span className="supplementalMetricIcon" aria-hidden="true">
+            <Icon size={17} />
+          </span>
+          <span>
+            <TermLabel label={t.metrics[id]} language={language} termKey={termForLabel(t.metrics[id])} />
+          </span>
+        </div>
+        <strong>
+          {isLoading ? (
+            <span className="supplementalLoadingValue">
+              <Loader2 className="spinning" size={16} />
+              {t.loading}
+            </span>
+          ) : (
+            (metric?.value ?? uiCopy[language].notAvailable)
+          )}
+        </strong>
+        {error && !isLoading ? <small className="supplementalMetricError">{error}</small> : null}
+        {!error && metric?.detail && !isLoading ? <small>{metric.detail}</small> : null}
+        {!error && metric?.chart && !isLoading ? (
+          id === "impliedUpside" && isFiniteChartNumber(metric.chart.target) ? (
+            <ImpliedUpsideChart chart={metric.chart} language={language} />
+          ) : (
+            <SupplementalMetricChart chart={metric.chart} language={language} />
+          )
+        ) : null}
+      </article>
+    );
+  }
 
   return (
     <section className="supplementalGrid" aria-busy={enabledMetricIds.some((id) => loading[id])} aria-label={t.ariaLabel}>
-      {enabledMetricIds.map((id) => {
-        const metric = metrics[id];
-        const error = errors[id];
-        const isLoading = Boolean(loading[id]);
-        const Icon = supplementalMetricIcons[id];
-
-        return (
-          <article
-            className={`supplementalMetric ${id === "momentum" || id === "epsRevisionTrend" ? "supplementalMetricWide" : ""}`}
-            key={id}
-          >
-            <div className="supplementalMetricTop">
-              <span className="supplementalMetricIcon" aria-hidden="true">
-                <Icon size={17} />
-              </span>
-              <span>
-                <TermLabel label={t.metrics[id]} language={language} termKey={termForLabel(t.metrics[id])} />
-              </span>
-            </div>
-            <strong>
-              {isLoading ? (
-                <span className="supplementalLoadingValue">
-                  <Loader2 className="spinning" size={16} />
-                  {t.loading}
-                </span>
-              ) : (
-                (metric?.value ?? uiCopy[language].notAvailable)
-              )}
-            </strong>
-            {error && !isLoading ? <small className="supplementalMetricError">{error}</small> : null}
-            {!error && metric?.detail && !isLoading ? <small>{metric.detail}</small> : null}
-            {!error && metric?.chart && !isLoading ? <SupplementalMetricChart chart={metric.chart} language={language} /> : null}
-          </article>
-        );
-      })}
+      {hasUpsideAndAnalyst ? (
+        <>
+          {leadingMetricIds.map((id) => renderMetric(id))}
+          {renderMetric("impliedUpside", "supplementalMetricUpside")}
+          {renderMetric("analystSignal", "supplementalMetricAnalystSide")}
+          {trailingMetricIds.map((id) => renderMetric(id))}
+        </>
+      ) : (
+        leadingMetricIds.map((id) => renderMetric(id))
+      )}
       {dataNotes.length ? (
         <p className="supplementalNote">{dataNotes.join(" ")}</p>
       ) : null}
     </section>
+  );
+}
+
+function ImpliedUpsideChart({
+  chart,
+  language,
+}: {
+  chart: NonNullable<SupplementalMetricResult["chart"]>;
+  language: Language;
+}) {
+  const target = chart.target;
+  if (!isFiniteChartNumber(target)) return null;
+
+  const points = chart.points
+    .flatMap((point) => {
+      const time = Date.parse(point.date);
+      return Number.isFinite(time) && isFiniteChartNumber(point.price) ? [{ ...point, time }] : [];
+    })
+    .sort((left, right) => left.time - right.time);
+  if (points.length < 2) return null;
+
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  const targetDate = chart.targetDate ?? endOfYearDate(lastPoint.date);
+  const targetTime = Date.parse(targetDate);
+  if (!Number.isFinite(targetTime) || targetTime <= firstPoint.time || targetTime < lastPoint.time) return null;
+
+  const width = 1000;
+  const height = 172;
+  const top = 12;
+  const bottom = 16;
+  const plotHeight = height - top - bottom;
+  const values = [...points.map((point) => point.price), target];
+  let minValue = Math.min(...values);
+  let maxValue = Math.max(...values);
+
+  if (minValue === maxValue) {
+    const padding = Math.max(Math.abs(minValue) * 0.04, 1);
+    minValue = Math.max(0, minValue - padding);
+    maxValue += padding;
+  } else {
+    const padding = Math.max((maxValue - minValue) * 0.12, maxValue * 0.01);
+    minValue = Math.max(0, minValue - padding);
+    maxValue += padding;
+  }
+
+  const xForTime = (time: number) => ((time - firstPoint.time) / (targetTime - firstPoint.time)) * width;
+  const yFor = (value: number) => top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
+  const latestX = xForTime(lastPoint.time);
+  const latestY = yFor(lastPoint.price);
+  const targetY = yFor(target);
+  const pricePath = svgPath(points.map((point) => ({ x: xForTime(point.time), y: yFor(point.price) })));
+  const projectionPath = svgPath([
+    { x: latestX, y: latestY },
+    { x: width, y: targetY },
+  ]);
+  const projectionTone = target >= lastPoint.price ? "positive" : "negative";
+  const targetLabel = chart.averageLabel || "Target";
+  const title = `${chart.priceLabel}: ${formatChartValue(lastPoint.price, chart, language)}; ${targetLabel}: ${formatChartValue(
+    target,
+    chart,
+    language,
+  )}`;
+
+  return (
+    <figure className={`upsideChart ${projectionTone}`} aria-label={title}>
+      <div className="upsideChartLegend">
+        <span>
+          <i className="momentumLegendSwatch price" aria-hidden="true" />
+          {chart.priceLabel}: {formatChartValue(lastPoint.price, chart, language)}
+        </span>
+        <span>
+          <i className="upsideLegendSwatch projection" aria-hidden="true" />
+          {targetLabel}: {formatChartValue(target, chart, language)}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
+        <title>{title}</title>
+        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.25} y2={top + plotHeight * 0.25} />
+        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.5} y2={top + plotHeight * 0.5} />
+        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
+        <line className="upsideChartTargetGuide" x1="0" x2={width} y1={targetY} y2={targetY} />
+        <path className="upsideChartPrice" d={pricePath} />
+        <path className="upsideChartProjection" d={projectionPath} />
+        <circle className="upsideChartCurrentDot" cx={latestX} cy={latestY} r="4.4" />
+        <circle className="upsideChartTargetDot" cx={width} cy={targetY} r="5" />
+      </svg>
+      <div className="upsideChartAxis" aria-hidden="true">
+        <span>{firstPoint.label ?? formatChartDate(firstPoint.date, language)}</span>
+        <span>{lastPoint.label ?? formatChartDate(lastPoint.date, language)}</span>
+        <span>{formatChartDate(targetDate, language)}</span>
+      </div>
+    </figure>
   );
 }
 
@@ -1281,4 +1411,10 @@ function formatChartDate(value: string, language: Language) {
     month: "short",
     year: "2-digit",
   }).format(date);
+}
+
+function endOfYearDate(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  const year = Number.isFinite(date.getTime()) ? date.getUTCFullYear() : new Date().getUTCFullYear();
+  return `${year}-12-31`;
 }
