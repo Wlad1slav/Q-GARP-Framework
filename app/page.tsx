@@ -17,7 +17,7 @@ import {
   UsersRound,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
   DEFAULT_ANALYSIS_SETTINGS,
@@ -87,6 +87,8 @@ const supplementalMetricIcons = {
   analystSignal: UsersRound,
   epsRevisionTrend: TrendingUp,
 } satisfies Record<SupplementalMetricId, typeof TrendingUp>;
+
+const supplementalChartMetricIds: SupplementalMetricId[] = ["impliedUpside", "momentum", "epsRevisionTrend"];
 
 const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v3";
 const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v2";
@@ -559,7 +561,16 @@ export default function Home() {
               ) : null}
             </div>
 
-            
+            {enabledSupplementalMetricIds.length ? (
+              <SupplementalMetricsPanel
+                enabledMetricIds={enabledSupplementalMetricIds}
+                errors={supplementalErrors}
+                language={language}
+                loading={supplementalLoading}
+                metrics={supplementalMetrics}
+                notes={supplementalNotes}
+              />
+            ) : null}
 
             <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
               <div className="peerEditorText">
@@ -626,7 +637,7 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="metricGrid" style={{marginBottom: '32px'}} aria-label={t.aria.metrics}>
+            <section className="metricGrid" aria-label={t.aria.metrics}>
               {analysis.indicators.map((indicator) => (
                 <MetricCard
                   actualPeersSourceUrl={actualPeersSourceUrl}
@@ -638,17 +649,6 @@ export default function Home() {
                 />
               ))}
             </section>
-
-            {enabledSupplementalMetricIds.length ? (
-              <SupplementalMetricsPanel
-                enabledMetricIds={enabledSupplementalMetricIds}
-                errors={supplementalErrors}
-                language={language}
-                loading={supplementalLoading}
-                metrics={supplementalMetrics}
-                notes={supplementalNotes}
-              />
-            ) : null}
 
             <p className="finePrint">
               <JoinedTextWithActualPeersLinks href={actualPeersSourceUrl} texts={analysis.dataNotes} />
@@ -682,31 +682,21 @@ function SupplementalMetricsPanel({
 }) {
   const t = supplementalMetricsCopy[language];
   const dataNotes = Array.from(new Set(enabledMetricIds.flatMap((id) => notes[id] ?? [])));
-  const hasUpsideAndAnalyst =
-    enabledMetricIds.includes("impliedUpside") && enabledMetricIds.includes("analystSignal");
-  const impliedUpsideIndex = supplementalMetricIds.indexOf("impliedUpside");
-  const leadingMetricIds = hasUpsideAndAnalyst
-    ? enabledMetricIds.filter((id) => supplementalMetricIds.indexOf(id) < impliedUpsideIndex)
-    : enabledMetricIds;
-  const trailingMetricIds = hasUpsideAndAnalyst
-    ? enabledMetricIds.filter(
-        (id) =>
-          id !== "impliedUpside" &&
-          id !== "analystSignal" &&
-          supplementalMetricIds.indexOf(id) > impliedUpsideIndex,
-      )
-    : [];
+  const chartMetricIds = enabledMetricIds.filter((id) => supplementalChartMetricIds.includes(id));
+  const compactMetricIds = enabledMetricIds.filter((id) => !supplementalChartMetricIds.includes(id));
 
   function renderMetric(id: SupplementalMetricId, className = "") {
     const metric = metrics[id];
     const error = errors[id];
     const isLoading = Boolean(loading[id]);
     const Icon = supplementalMetricIcons[id];
-    const isWide = id === "momentum" || id === "epsRevisionTrend";
+    const isChartMetric = supplementalChartMetricIds.includes(id);
+    const hasRenderableChart = Boolean(!error && !isLoading && metric?.chart);
     const articleClassName = [
       "supplementalMetric",
-      isWide ? "supplementalMetricWide" : "",
-      id === "impliedUpside" && !className ? "supplementalMetricWide" : "",
+      isChartMetric ? "supplementalMetricChartCard" : "supplementalMetricKpi",
+      id === "impliedUpside" ? "supplementalMetricChartPrimary" : "",
+      hasRenderableChart ? "supplementalMetricHasChart" : "",
       className,
     ]
       .filter(Boolean)
@@ -746,17 +736,13 @@ function SupplementalMetricsPanel({
   }
 
   return (
-    <section className="supplementalGrid" aria-busy={enabledMetricIds.some((id) => loading[id])} aria-label={t.ariaLabel}>
-      {hasUpsideAndAnalyst ? (
-        <>
-          {leadingMetricIds.map((id) => renderMetric(id))}
-          {renderMetric("impliedUpside", "supplementalMetricUpside")}
-          {renderMetric("analystSignal", "supplementalMetricAnalystSide")}
-          {trailingMetricIds.map((id) => renderMetric(id))}
-        </>
-      ) : (
-        leadingMetricIds.map((id) => renderMetric(id))
-      )}
+    <section className="supplementalPanel" aria-busy={enabledMetricIds.some((id) => loading[id])} aria-label={t.ariaLabel}>
+      {chartMetricIds.length ? (
+        <div className="supplementalChartGrid">{chartMetricIds.map((id) => renderMetric(id))}</div>
+      ) : null}
+      {compactMetricIds.length ? (
+        <div className="supplementalKpiGrid">{compactMetricIds.map((id) => renderMetric(id))}</div>
+      ) : null}
       {dataNotes.length ? (
         <p className="supplementalNote">{dataNotes.join(" ")}</p>
       ) : null}
@@ -771,6 +757,9 @@ function ImpliedUpsideChart({
   chart: NonNullable<SupplementalMetricResult["chart"]>;
   language: Language;
 }) {
+  const chartGradientId = useId().replace(/:/g, "");
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const target = chart.target;
   if (!isFiniteChartNumber(target)) return null;
 
@@ -794,8 +783,10 @@ function ImpliedUpsideChart({
   const bottom = 16;
   const plotHeight = height - top - bottom;
   const values = [...points.map((point) => point.price), target];
-  let minValue = Math.min(...values);
-  let maxValue = Math.max(...values);
+  const rawMinValue = Math.min(...values);
+  const rawMaxValue = Math.max(...values);
+  let minValue = rawMinValue;
+  let maxValue = rawMaxValue;
 
   if (minValue === maxValue) {
     const padding = Math.max(Math.abs(minValue) * 0.04, 1);
@@ -812,22 +803,64 @@ function ImpliedUpsideChart({
   const latestX = xForTime(lastPoint.time);
   const latestY = yFor(lastPoint.price);
   const targetY = yFor(target);
-  const pricePath = svgPath(points.map((point) => ({ x: xForTime(point.time), y: yFor(point.price) })));
+  const priceCoordinates = points.map((point) => ({ point, x: xForTime(point.time), y: yFor(point.price) }));
+  const pricePath = svgPath(priceCoordinates);
+  const chartBottomY = top + plotHeight;
+  const priceAreaPath = `${pricePath} L ${latestX.toFixed(2)} ${chartBottomY.toFixed(2)} L 0 ${chartBottomY.toFixed(2)} Z`;
   const projectionPath = svgPath([
     { x: latestX, y: latestY },
     { x: width, y: targetY },
   ]);
   const projectionTone = target >= lastPoint.price ? "positive" : "negative";
+  const projectionPercent = lastPoint.price > 0 ? (target - lastPoint.price) / lastPoint.price : undefined;
   const targetLabel = chart.averageLabel || "Target";
   const title = `${chart.priceLabel}: ${formatChartValue(lastPoint.price, chart, language)}; ${targetLabel}: ${formatChartValue(
     target,
     chart,
     language,
   )}`;
+  const activeCoordinate = activeIndex === null ? undefined : priceCoordinates[activeIndex];
+
+  function activateNearestPoint(clientX: number) {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+
+    const x = clampNumber(((clientX - rect.left) / rect.width) * width, 0, width);
+    setActiveIndex(nearestChartPointIndex(priceCoordinates, x));
+  }
+
+  function moveActivePoint(step: number) {
+    setActiveIndex((current) => clampNumber((current ?? priceCoordinates.length - 1) + step, 0, priceCoordinates.length - 1));
+  }
+
+  function handleChartKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveActivePoint(-1);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveActivePoint(1);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(priceCoordinates.length - 1);
+    }
+  }
 
   return (
     <figure className={`upsideChart ${projectionTone}`} aria-label={title}>
-      <div className="upsideChartLegend">
+      <div className="chartLegend upsideChartLegend">
         <span>
           <i className="momentumLegendSwatch price" aria-hidden="true" />
           {chart.priceLabel}: {formatChartValue(lastPoint.price, chart, language)}
@@ -836,18 +869,69 @@ function ImpliedUpsideChart({
           <i className="upsideLegendSwatch projection" aria-hidden="true" />
           {targetLabel}: {formatChartValue(target, chart, language)}
         </span>
+        {isFiniteChartNumber(projectionPercent) ? (
+          <span className={`chartDelta ${projectionTone}`}>{formatSignedChartPercent(projectionPercent, language)}</span>
+        ) : null}
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
-        <title>{title}</title>
-        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.25} y2={top + plotHeight * 0.25} />
-        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.5} y2={top + plotHeight * 0.5} />
-        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
-        <line className="upsideChartTargetGuide" x1="0" x2={width} y1={targetY} y2={targetY} />
-        <path className="upsideChartPrice" d={pricePath} />
-        <path className="upsideChartProjection" d={projectionPath} />
-        <circle className="upsideChartCurrentDot" cx={latestX} cy={latestY} r="4.4" />
-        <circle className="upsideChartTargetDot" cx={width} cy={targetY} r="5" />
-      </svg>
+      <div
+        className="chartViewport chartViewportInteractive"
+        ref={viewportRef}
+        role="group"
+        tabIndex={0}
+        aria-label={title}
+        onBlur={() => setActiveIndex(null)}
+        onFocus={() => setActiveIndex(priceCoordinates.length - 1)}
+        onKeyDown={handleChartKeyDown}
+        onPointerDown={(event) => activateNearestPoint(event.clientX)}
+        onPointerLeave={() => setActiveIndex(null)}
+        onPointerMove={(event) => activateNearestPoint(event.clientX)}
+      >
+        <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
+          <title>{title}</title>
+          <defs>
+            <linearGradient id={chartGradientId} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.14" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.25} y2={top + plotHeight * 0.25} />
+          <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.5} y2={top + plotHeight * 0.5} />
+          <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
+          <line className="upsideChartTargetGuide" x1="0" x2={width} y1={targetY} y2={targetY} />
+          <path className="upsideChartArea" d={priceAreaPath} fill={`url(#${chartGradientId})`} />
+          <path className="upsideChartPrice" d={pricePath} />
+          <path className="upsideChartProjection" d={projectionPath} />
+          <circle className="upsideChartCurrentDot" cx={latestX} cy={latestY} r="4.4" />
+          <circle className="upsideChartTargetDot" cx={width} cy={targetY} r="5" />
+          {activeCoordinate ? (
+            <>
+              <line className="chartCrosshairLine" x1={activeCoordinate.x} x2={activeCoordinate.x} y1={top} y2={chartBottomY} />
+              <line className="chartCrosshairGuide" x1="0" x2={width} y1={activeCoordinate.y} y2={activeCoordinate.y} />
+              <circle className="chartActiveDot" cx={activeCoordinate.x} cy={activeCoordinate.y} r="5" />
+            </>
+          ) : null}
+        </svg>
+        <div className="chartScale" aria-hidden="true">
+          <span>{formatChartValue(rawMaxValue, chart, language)}</span>
+          <span>{formatChartValue(rawMinValue, chart, language)}</span>
+        </div>
+        {activeCoordinate ? (
+          <div
+            className="chartTooltip"
+            style={
+              {
+                "--chart-tooltip-x": `${(activeCoordinate.x / width) * 100}%`,
+                "--chart-tooltip-y": `${(activeCoordinate.y / height) * 100}%`,
+              } as React.CSSProperties
+            }
+          >
+            <span>{formatChartTooltipDate(activeCoordinate.point.date, activeCoordinate.point.label, language)}</span>
+            <strong>
+              {chart.priceLabel}: {formatChartValue(activeCoordinate.point.price, chart, language)}
+            </strong>
+          </div>
+        ) : null}
+      </div>
       <div className="upsideChartAxis" aria-hidden="true">
         <span>{firstPoint.label ?? formatChartDate(firstPoint.date, language)}</span>
         <span>{lastPoint.label ?? formatChartDate(lastPoint.date, language)}</span>
@@ -864,6 +948,9 @@ function SupplementalMetricChart({
   chart: NonNullable<SupplementalMetricResult["chart"]>;
   language: Language;
 }) {
+  const chartGradientId = useId().replace(/:/g, "");
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const points = chart.points.filter((point) => isFiniteChartNumber(point.price));
   if (points.length < 2) return null;
 
@@ -878,8 +965,10 @@ function SupplementalMetricChart({
   const hasTimeline = times.every(Number.isFinite) && lastTime > firstTime;
   const averageValues = points.map((point) => point.average).filter(isFiniteChartNumber);
   const values = [...points.map((point) => point.price), ...averageValues];
-  let minValue = Math.min(...values);
-  let maxValue = Math.max(...values);
+  const rawMinValue = Math.min(...values);
+  const rawMaxValue = Math.max(...values);
+  let minValue = rawMinValue;
+  let maxValue = rawMaxValue;
 
   if (minValue === maxValue) {
     minValue -= Math.max(Math.abs(minValue) * 0.02, 1);
@@ -898,7 +987,10 @@ function SupplementalMetricChart({
     return (index / Math.max(points.length - 1, 1)) * width;
   };
   const yFor = (value: number) => top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
-  const pricePath = svgPath(points.map((point, index) => ({ x: xFor(point, index), y: yFor(point.price) })));
+  const priceCoordinates = points.map((point, index) => ({ point, x: xFor(point, index), y: yFor(point.price) }));
+  const pricePath = svgPath(priceCoordinates);
+  const chartBottomY = top + plotHeight;
+  const priceAreaPath = `${pricePath} L ${priceCoordinates[priceCoordinates.length - 1].x.toFixed(2)} ${chartBottomY.toFixed(2)} L ${priceCoordinates[0].x.toFixed(2)} ${chartBottomY.toFixed(2)} Z`;
   const averagePath = svgPath(
     points
       .map((point, index) =>
@@ -909,11 +1001,55 @@ function SupplementalMetricChart({
   const firstPoint = points[0];
   const lastPoint = points[points.length - 1];
   const latestAverage = [...points].reverse().find((point) => isFiniteChartNumber(point.average))?.average;
+  const latestChange = firstPoint.price !== 0 ? (lastPoint.price - firstPoint.price) / Math.abs(firstPoint.price) : undefined;
+  const latestChangeTone = isFiniteChartNumber(latestChange) && latestChange >= 0 ? "positive" : "negative";
   const title = `${chart.priceLabel}: ${formatChartValue(lastPoint.price, chart, language)}`;
+  const activeCoordinate = activeIndex === null ? undefined : priceCoordinates[activeIndex];
+  const activeAverageY =
+    activeCoordinate && isFiniteChartNumber(activeCoordinate.point.average)
+      ? yFor(activeCoordinate.point.average)
+      : undefined;
+
+  function activateNearestPoint(clientX: number) {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+
+    const x = clampNumber(((clientX - rect.left) / rect.width) * width, 0, width);
+    setActiveIndex(nearestChartPointIndex(priceCoordinates, x));
+  }
+
+  function moveActivePoint(step: number) {
+    setActiveIndex((current) => clampNumber((current ?? priceCoordinates.length - 1) + step, 0, priceCoordinates.length - 1));
+  }
+
+  function handleChartKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveActivePoint(-1);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveActivePoint(1);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(priceCoordinates.length - 1);
+    }
+  }
 
   return (
     <figure className="momentumChart" aria-label={title}>
-      <div className="momentumChartLegend">
+      <div className="chartLegend momentumChartLegend">
         <span>
           <i className="momentumLegendSwatch price" aria-hidden="true" />
           {chart.priceLabel}: {formatChartValue(lastPoint.price, chart, language)}
@@ -924,26 +1060,91 @@ function SupplementalMetricChart({
             {chart.averageLabel}: {formatChartValue(latestAverage, chart, language)}
           </span>
         ) : null}
+        {chart.valueFormat !== "number" && isFiniteChartNumber(latestChange) ? (
+          <span className={`chartDelta ${latestChangeTone}`}>{formatSignedChartPercent(latestChange, language)}</span>
+        ) : null}
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
-        <title>{title}</title>
-        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.25} y2={top + plotHeight * 0.25} />
-        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.5} y2={top + plotHeight * 0.5} />
-        <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
-        {averagePath ? <path className="momentumChartAverage" d={averagePath} /> : null}
-        <path className="momentumChartPrice" d={pricePath} />
-        {chart.showPoints
-          ? points.map((point, index) => (
-              <circle
-                className="momentumChartDot"
-                cx={xFor(point, index)}
-                cy={yFor(point.price)}
-                key={`${point.date}-${index}`}
-                r="3.5"
-              />
-            ))
-          : null}
-      </svg>
+      <div
+        className="chartViewport chartViewportInteractive"
+        ref={viewportRef}
+        role="group"
+        tabIndex={0}
+        aria-label={title}
+        onBlur={() => setActiveIndex(null)}
+        onFocus={() => setActiveIndex(priceCoordinates.length - 1)}
+        onKeyDown={handleChartKeyDown}
+        onPointerDown={(event) => activateNearestPoint(event.clientX)}
+        onPointerLeave={() => setActiveIndex(null)}
+        onPointerMove={(event) => activateNearestPoint(event.clientX)}
+      >
+        <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img">
+          <title>{title}</title>
+          <defs>
+            <linearGradient id={chartGradientId} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.14" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.25} y2={top + plotHeight * 0.25} />
+          <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.5} y2={top + plotHeight * 0.5} />
+          <line className="momentumChartGrid" x1="0" x2={width} y1={top + plotHeight * 0.75} y2={top + plotHeight * 0.75} />
+          <path className="momentumChartArea" d={priceAreaPath} fill={`url(#${chartGradientId})`} />
+          {averagePath ? <path className="momentumChartAverage" d={averagePath} /> : null}
+          <path className="momentumChartPrice" d={pricePath} />
+          {chart.showPoints
+            ? points.map((point, index) => (
+                <circle
+                  className="momentumChartDot"
+                  cx={xFor(point, index)}
+                  cy={yFor(point.price)}
+                  key={`${point.date}-${index}`}
+                  r="3.5"
+                />
+              ))
+            : null}
+          <circle
+            className="momentumChartLastDot"
+            cx={priceCoordinates[priceCoordinates.length - 1].x}
+            cy={priceCoordinates[priceCoordinates.length - 1].y}
+            r="4"
+          />
+          {activeCoordinate ? (
+            <>
+              <line className="chartCrosshairLine" x1={activeCoordinate.x} x2={activeCoordinate.x} y1={top} y2={chartBottomY} />
+              <line className="chartCrosshairGuide" x1="0" x2={width} y1={activeCoordinate.y} y2={activeCoordinate.y} />
+              <circle className="chartActiveDot" cx={activeCoordinate.x} cy={activeCoordinate.y} r="5" />
+              {isFiniteChartNumber(activeAverageY) ? (
+                <circle className="chartActiveDot average" cx={activeCoordinate.x} cy={activeAverageY} r="4" />
+              ) : null}
+            </>
+          ) : null}
+        </svg>
+        <div className="chartScale" aria-hidden="true">
+          <span>{formatChartValue(rawMaxValue, chart, language)}</span>
+          <span>{formatChartValue(rawMinValue, chart, language)}</span>
+        </div>
+        {activeCoordinate ? (
+          <div
+            className="chartTooltip"
+            style={
+              {
+                "--chart-tooltip-x": `${(activeCoordinate.x / width) * 100}%`,
+                "--chart-tooltip-y": `${(activeCoordinate.y / height) * 100}%`,
+              } as React.CSSProperties
+            }
+          >
+            <span>{formatChartTooltipDate(activeCoordinate.point.date, activeCoordinate.point.label, language)}</span>
+            <strong>
+              {chart.priceLabel}: {formatChartValue(activeCoordinate.point.price, chart, language)}
+            </strong>
+            {isFiniteChartNumber(activeCoordinate.point.average) && chart.averageLabel ? (
+              <small>
+                {chart.averageLabel}: {formatChartValue(activeCoordinate.point.average, chart, language)}
+              </small>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       <div className="momentumChartAxis" aria-hidden="true">
         <span>{firstPoint.label ?? formatChartDate(firstPoint.date, language)}</span>
         <span>{lastPoint.label ?? formatChartDate(lastPoint.date, language)}</span>
@@ -1389,6 +1590,17 @@ function formatChartValue(
   return formatChartMoney(value, chart.currency, language);
 }
 
+function formatSignedChartPercent(value: number, language: Language) {
+  const formatted = new Intl.NumberFormat(localeForLanguage(language), {
+    style: "percent",
+    maximumFractionDigits: 1,
+    minimumFractionDigits: Math.abs(value) < 0.1 ? 1 : 0,
+    signDisplay: "always",
+  }).format(value);
+
+  return formatted;
+}
+
 function formatChartMoney(value: number, currency = "USD", language: Language) {
   try {
     return new Intl.NumberFormat(localeForLanguage(language), {
@@ -1411,6 +1623,36 @@ function formatChartDate(value: string, language: Language) {
     month: "short",
     year: "2-digit",
   }).format(date);
+}
+
+function formatChartTooltipDate(value: string, label: string | undefined, language: Language) {
+  if (label) return label;
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(localeForLanguage(language), {
+    dateStyle: "medium",
+  }).format(date);
+}
+
+function nearestChartPointIndex(points: Array<{ x: number }>, x: number) {
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const distance = Math.abs(points[index].x - x);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+
+  return nearestIndex;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function endOfYearDate(value: string) {

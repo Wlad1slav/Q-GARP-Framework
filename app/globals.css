@@ -798,6 +798,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
+  margin-bottom: 32px;
 }
 
 .metricCard {
@@ -971,7 +972,7 @@ button:disabled {
 }
 
 .tooltipTerm::after {
-  content: attr(data-tooltip);
+  content: none;
   bottom: calc(100% + 9px);
   width: min(280px, calc(100vw - 36px));
   padding: 10px 11px;
@@ -989,7 +990,7 @@ button:disabled {
 }
 
 .tooltipTerm::before {
-  content: "";
+  content: none;
   bottom: calc(100% + 4px);
   width: 9px;
   height: 9px;
@@ -1005,8 +1006,14 @@ button:disabled {
   transform: translateY(0);
 }
 
+.tooltipTerm:hover::after,
+.tooltipTerm:focus-visible::after {
+  content: attr(data-tooltip);
+}
+
 .tooltipTerm:hover::before,
 .tooltipTerm:focus-visible::before {
+  content: "";
   transform: translate(10px, 0) rotate(45deg);
 }
 
@@ -1100,43 +1107,67 @@ button:disabled {
   font-size: 0.82rem;
 }
 
-.supplementalGrid {
+.supplementalPanel {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: -2px 0 18px;
+  margin: -2px 0 20px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(31, 35, 40, 0.04);
+}
+
+.supplementalChartGrid,
+.supplementalKpiGrid {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.supplementalChartGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.supplementalKpiGrid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .supplementalMetric {
+  position: relative;
   min-width: 0;
-  min-height: 96px;
-  padding: 12px;
+  padding: 14px;
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 0;
+  border: 1px solid #e4e8ee;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(31, 35, 40, 0.035);
 }
 
-.supplementalMetricWide {
+.supplementalMetricKpi {
+  grid-column: span 2;
+  min-height: 126px;
+}
+
+.supplementalMetricChartCard {
+  display: flex;
+  min-height: 326px;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.supplementalMetricChartPrimary {
   grid-column: 1 / -1;
-}
-
-.supplementalMetricUpside {
-  grid-column: span 3;
-  min-height: 256px;
-}
-
-.supplementalMetricAnalystSide {
-  min-height: 256px;
 }
 
 .supplementalMetricTop {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 760;
+  font-size: 0.76rem;
+  font-weight: 780;
   line-height: 1.2;
 }
 
@@ -1147,29 +1178,33 @@ button:disabled {
 
 .supplementalMetricIcon {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   place-items: center;
-  color: var(--blue);
-  background: var(--blue-soft);
-  border-radius: 0;
+  color: var(--muted);
 }
 
 .supplementalMetric strong {
   display: block;
-  margin-top: 10px;
+  margin-top: 13px;
   overflow-wrap: anywhere;
-  font-size: 1.08rem;
+  color: var(--ink);
+  font-size: 1.28rem;
+  font-weight: 760;
   line-height: 1.18;
+}
+
+.supplementalMetricChartCard > strong {
+  font-size: 1.48rem;
 }
 
 .supplementalMetric small {
   display: block;
-  margin-top: 6px;
+  margin-top: 7px;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.3;
+  font-size: 0.77rem;
+  line-height: 1.36;
 }
 
 .supplementalMetricError {
@@ -1186,13 +1221,13 @@ button:disabled {
 
 .momentumChart {
   min-width: 0;
-  margin: 12px 0 0;
+  margin: 14px 0 0;
 }
 
-.momentumChartLegend {
+.chartLegend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 8px 12px;
   min-width: 0;
   color: var(--muted);
   font-size: 0.76rem;
@@ -1200,7 +1235,7 @@ button:disabled {
   line-height: 1.2;
 }
 
-.momentumChartLegend span {
+.chartLegend span {
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -1219,44 +1254,209 @@ button:disabled {
   background: var(--amber);
 }
 
-.momentumChart svg {
+.chartDelta {
+  min-height: 23px;
+  padding: 4px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 820;
+}
+
+.chartDelta.positive {
+  color: var(--green);
+  background: rgba(22, 124, 84, 0.07);
+}
+
+.chartDelta.negative {
+  color: var(--red);
+  background: rgba(179, 59, 59, 0.07);
+}
+
+.chartViewport {
+  position: relative;
+  min-width: 0;
+  margin-top: 10px;
+  overflow: hidden;
+  color: var(--blue);
+  background: #f8fafc;
+  border: 1px solid #e2e7ee;
+  border-radius: 8px;
+}
+
+.chartViewportInteractive {
+  cursor: crosshair;
+  outline: none;
+  touch-action: pan-y;
+}
+
+.chartViewportInteractive:focus-visible {
+  border-color: rgba(37, 111, 186, 0.48);
+  box-shadow: 0 0 0 3px rgba(37, 111, 186, 0.13);
+}
+
+.momentumChart svg,
+.upsideChart svg {
   display: block;
   width: 100%;
-  height: 112px;
-  margin-top: 8px;
-  overflow: visible;
-  background: #fbfcfd;
-  border: 1px solid var(--line);
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+}
+
+.momentumChart svg {
+  height: 168px;
 }
 
 .momentumChartGrid {
-  stroke: #e6ebf0;
+  stroke: rgba(91, 103, 115, 0.16);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .momentumChartPrice,
-.momentumChartAverage {
+.momentumChartAverage,
+.upsideChartPrice,
+.upsideChartProjection {
   fill: none;
   vector-effect: non-scaling-stroke;
 }
 
+.momentumChartArea,
+.upsideChartArea {
+  color: var(--blue);
+  fill-opacity: 1;
+  stroke: none;
+}
+
 .momentumChartPrice {
   stroke: var(--blue);
-  stroke-width: 2.8;
+  stroke-width: 2.4;
 }
 
 .momentumChartAverage {
   stroke: var(--amber);
-  stroke-width: 2;
+  stroke-width: 1.8;
   stroke-dasharray: 6 5;
 }
 
-.momentumChartDot {
+.momentumChartDot,
+.momentumChartLastDot {
   fill: #fbfcfd;
   stroke: var(--blue);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+}
+
+.momentumChartDot {
+  opacity: 0.86;
+}
+
+.chartScale {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  bottom: 9px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: rgba(104, 111, 120, 0.82);
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 1;
+  pointer-events: none;
+  text-align: right;
+}
+
+.chartCrosshairLine,
+.chartCrosshairGuide {
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartCrosshairLine {
+  stroke: rgba(31, 35, 40, 0.38);
+  stroke-width: 1.1;
+  stroke-dasharray: 4 5;
+}
+
+.chartCrosshairGuide {
+  stroke: rgba(37, 111, 186, 0.22);
+  stroke-width: 1;
+}
+
+.chartActiveDot {
+  fill: #fff;
+  stroke: var(--blue);
+  stroke-width: 2.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartActiveDot.average {
+  stroke: var(--amber);
+  stroke-width: 2.2;
+}
+
+.chartTooltip {
+  position: absolute;
+  top: clamp(76px, var(--chart-tooltip-y), calc(100% - 12px));
+  left: clamp(110px, var(--chart-tooltip-x), calc(100% - 110px));
+  z-index: 4;
+  width: max-content;
+  max-width: min(230px, calc(100% - 18px));
+  padding: 8px 9px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(207, 214, 223, 0.92);
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(31, 35, 40, 0.14);
+  font-size: 0.74rem;
+  line-height: 1.25;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+}
+
+.chartTooltip::after {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  content: "";
+  background: rgba(255, 255, 255, 0.96);
+  border-right: 1px solid rgba(207, 214, 223, 0.92);
+  border-bottom: 1px solid rgba(207, 214, 223, 0.92);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.chartTooltip span,
+.chartTooltip strong,
+.chartTooltip small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chartTooltip span,
+.chartTooltip small {
+  color: var(--muted);
+}
+
+.chartTooltip span {
+  margin-bottom: 4px;
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.chartTooltip strong {
+  font-size: 0.78rem;
+  font-weight: 820;
+}
+
+.chartTooltip small {
+  margin-top: 3px;
+  font-size: 0.7rem;
+  font-weight: 720;
 }
 
 .momentumChartAxis {
@@ -1275,25 +1475,6 @@ button:disabled {
   margin: 14px 0 0;
 }
 
-.upsideChartLegend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  min-width: 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 760;
-  line-height: 1.2;
-}
-
-.upsideChartLegend span {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  overflow-wrap: anywhere;
-}
-
 .upsideLegendSwatch {
   width: 20px;
   height: 3px;
@@ -1306,29 +1487,17 @@ button:disabled {
 }
 
 .upsideChart svg {
-  display: block;
-  width: 100%;
-  height: 172px;
-  margin-top: 9px;
-  overflow: visible;
-  background: #fbfcfd;
-  border: 1px solid var(--line);
-}
-
-.upsideChartPrice,
-.upsideChartProjection {
-  fill: none;
-  vector-effect: non-scaling-stroke;
+  height: 220px;
 }
 
 .upsideChartPrice {
   stroke: var(--blue);
-  stroke-width: 3;
+  stroke-width: 2.6;
 }
 
 .upsideChartProjection {
   stroke: var(--green);
-  stroke-width: 3.2;
+  stroke-width: 2.8;
   stroke-dasharray: 8 6;
 }
 
@@ -2532,6 +2701,10 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .supplementalKpiGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .leaderGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2586,16 +2759,24 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .supplementalGrid {
+  .supplementalChartGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .supplementalMetricChartPrimary {
+    grid-column: auto;
+  }
+
+  .supplementalKpiGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .supplementalMetricUpside {
-    grid-column: 1 / -1;
+  .supplementalMetricKpi {
+    grid-column: auto;
   }
 
-  .supplementalMetricAnalystSide {
-    min-height: 148px;
+  .supplementalMetricChartCard {
+    min-height: 292px;
   }
 
   .peerEditor {
@@ -2681,14 +2862,26 @@ button:disabled {
   }
 
   .companyGrid,
-  .supplementalGrid,
+  .supplementalKpiGrid,
   .metricGrid,
   .leaderGrid {
     grid-template-columns: 1fr;
   }
 
+  .supplementalPanel {
+    padding: 10px;
+  }
+
+  .supplementalMetricChartCard {
+    min-height: auto;
+  }
+
+  .momentumChart svg {
+    height: 146px;
+  }
+
   .upsideChart svg {
-    height: 150px;
+    height: 168px;
   }
 
   .upsideChartAxis {
