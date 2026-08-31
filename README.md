@@ -21,7 +21,8 @@ helper, not investment advice.
   for each of the five indicators.
 - Portfolio poster generator at `/portfolio-visual` with Yahoo Portfolio,
   Revolut Stocks, and IBKR Activity Statement/Flex Query CSV imports, live
-  quote refresh, company logos, portrait upload, and PNG/SVG export.
+  quote refresh, company logos, portrait upload, PNG/SVG export, and a Q2 2026
+  Pelosi modeled-allocation example cross-checked against public House filings.
 - Automatic ACTUAL_PEERS peer groups with Yahoo fallback plus manually saved peer groups.
 - Ukrainian and English UI copy.
 - Lightweight API routes for ticker analysis, S&P 500 constituents, and batch
@@ -34,7 +35,9 @@ helper, not investment advice.
 - `/sp500-top` - S&P 500 scanner that ranks companies by overall score and by
   each indicator: doubling pace, valuation, growth, margins, and PEG with SBC.
 - `/portfolio-visual` - turns Yahoo, Revolut, or IBKR portfolio CSV exports into
-  a shareable allocation poster with company logos and an optional portrait.
+  a shareable allocation poster with company logos and an optional portrait;
+  it also includes a Q2 2026 Pelosi modeled-allocation example with an explicit
+  third-party-estimate caveat and Annual/Q1/Q2 source links.
 
 ## API
 

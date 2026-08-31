@@ -10,7 +10,7 @@ type QuoteRequest = {
   positions?: ImportedPortfolioPosition[];
   cash?: ImportedPortfolioCash[];
   baseCurrency?: string;
-  source?: "yahoo" | "revolut" | "ibkr";
+  source?: "yahoo" | "revolut" | "ibkr" | "example";
 };
 
 type YahooQuote = {

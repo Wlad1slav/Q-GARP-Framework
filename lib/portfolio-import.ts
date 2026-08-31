@@ -1,4 +1,4 @@
-export type PortfolioImportSource = "yahoo" | "revolut" | "ibkr";
+export type PortfolioImportSource = "yahoo" | "revolut" | "ibkr" | "example";
 
 export type ImportedPortfolioPosition = {
   symbol: string;

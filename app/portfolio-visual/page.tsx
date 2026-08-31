@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  ArrowRight,
   CalendarDays,
   Check,
   Download,
+  ExternalLink,
   FileSpreadsheet,
   ImagePlus,
+  Landmark,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -28,6 +31,15 @@ import {
   type ParsedPortfolio,
   type PortfolioImportSource,
 } from "@/lib/portfolio-import";
+import {
+  PELOSI_ALLOCATION_SOURCE_URL,
+  PELOSI_ANNUAL_DISCLOSURE_URL,
+  PELOSI_PORTRAIT_PATH,
+  PELOSI_PORTRAIT_SOURCE_URL,
+  PELOSI_Q1_PTR_URL,
+  PELOSI_Q2_2026_EXAMPLE,
+  PELOSI_Q2_PTR_URL,
+} from "@/lib/portfolio-examples";
 
 type ResolvedPosition = {
   sourceSymbol: string;
@@ -79,10 +91,11 @@ const SEGMENT_COLORS = ["#121722", "#343b46", "#59616c", "#777e87", "#969ca4", "
 const BASE_CURRENCIES = ["USD", "EUR", "GBP", "CHF", "CAD"];
 const PORTFOLIO_VISUAL_URL = "https://q-garp.netlify.app/portfolio-visual";
 
-const sourceLabels: Record<PortfolioImportSource, string> = {
-  yahoo: "Yahoo Finance",
-  revolut: "Revolut",
-  ibkr: "Interactive Brokers",
+const sourceLabels: Record<PortfolioImportSource, Record<Language, string>> = {
+  yahoo: { uk: "Yahoo Finance", en: "Yahoo Finance" },
+  revolut: { uk: "Revolut", en: "Revolut" },
+  ibkr: { uk: "Interactive Brokers", en: "Interactive Brokers" },
+  example: { uk: "Q2 2026 модель · публічні розкриття", en: "Q2 2026 model · public disclosures" },
 };
 
 const copy = {
@@ -117,6 +130,7 @@ const copy = {
     chartSubtitle: "STOCK PORTFOLIO",
     byAllocation: "By allocation · as of",
     other: "OTHER",
+    otherModeledHoldings: "Інші модельні позиції",
     cash: "CASH",
     holdings: "Алокація",
     holding: "Позиція",
@@ -127,6 +141,22 @@ const copy = {
     fallback: "із CSV",
     uploadAnother: "Інший CSV",
     ibkrHelp: "Для IBKR експортуйте CSV із секціями Open Positions і Cash Report.",
+    exampleEyebrow: "Публічний приклад",
+    exampleTitle: "Портфель Пелосі · Q2 2026",
+    exampleText: "Модельна алокація: NVDA 43,5%, AMZN 7,9%, AVGO 7,2%, MSFT 6,9%, GOOGL 5,2%, cash 8,5%.",
+    exampleAction: "Згенерувати приклад",
+    disclosureBasisTitle: "Як побудовано цей приклад",
+    disclosureBasisText: "Ваги відтворено з Q2 2026 інфографіки Investing Visuals і звірено з публічними формами. House disclosure не містить точних квартальних ваг: Q2 PTR підтверджує лише придбання 200 call-опціонів INTC та 200 call-опціонів UBER 29 травня. Усі операції позначені SP (spouse). Це стороння модель, а не офіційний портфель.",
+    allocationSource: "Джерело алокації",
+    annualDisclosure: "Annual 2025",
+    q1Transactions: "Q1 PTR",
+    q2Transactions: "Q2 PTR",
+    portraitSource: "Джерело фото",
+    estimate: "модель",
+    modeledAllocation: "Q2 2026 · модельні ваги ≈100%",
+    disclosureChartSubtitle: "STOCK PORTFOLIO",
+    disclosureByAllocation: "Modeled allocation · as of",
+    disclosurePosterSource: "SOURCE: INVESTING VISUALS EST. · U.S. HOUSE FILINGS",
   },
   en: {
     eyebrow: "Portfolio Visual",
@@ -159,6 +189,7 @@ const copy = {
     chartSubtitle: "STOCK PORTFOLIO",
     byAllocation: "By allocation · as of",
     other: "OTHER",
+    otherModeledHoldings: "Other modeled holdings",
     cash: "CASH",
     holdings: "Allocation",
     holding: "Holding",
@@ -169,6 +200,22 @@ const copy = {
     fallback: "from CSV",
     uploadAnother: "Another CSV",
     ibkrHelp: "For IBKR, export CSV with the Open Positions and Cash Report sections.",
+    exampleEyebrow: "Public example",
+    exampleTitle: "Pelosi portfolio · Q2 2026",
+    exampleText: "Modeled allocation: NVDA 43.5%, AMZN 7.9%, AVGO 7.2%, MSFT 6.9%, GOOGL 5.2%, and 8.5% cash.",
+    exampleAction: "Generate example",
+    disclosureBasisTitle: "How this example is built",
+    disclosureBasisText: "Weights reproduce Investing Visuals' Q2 2026 graphic and are cross-checked against public filings. House disclosures do not report exact quarterly weights: the Q2 PTR only confirms purchases of 200 INTC calls and 200 UBER calls on May 29. Every transaction is marked SP (spouse). This is a third-party model, not an official portfolio.",
+    allocationSource: "Allocation source",
+    annualDisclosure: "Annual 2025",
+    q1Transactions: "Q1 PTR",
+    q2Transactions: "Q2 PTR",
+    portraitSource: "Portrait source",
+    estimate: "model",
+    modeledAllocation: "Q2 2026 · modeled weights ≈100%",
+    disclosureChartSubtitle: "STOCK PORTFOLIO",
+    disclosureByAllocation: "Modeled allocation · as of",
+    disclosurePosterSource: "SOURCE: INVESTING VISUALS EST. · U.S. HOUSE FILINGS",
   },
 } satisfies Record<Language, Record<string, string>>;
 
@@ -211,24 +258,26 @@ export default function PortfolioVisualPage() {
 
   useEffect(() => {
     if (!parsed) return;
+    const currentPortfolio = parsed;
     const controller = new AbortController();
     let active = true;
 
     async function refresh() {
-      setLoading(true);
+      setLoading(currentPortfolio.source !== "example");
       setError("");
-      setResolvedPositions(fallbackPositions(parsed as ParsedPortfolio, baseCurrency));
-      setCashValue(fallbackCashValue(parsed as ParsedPortfolio, baseCurrency));
+      setResolvedPositions(fallbackPositions(currentPortfolio, baseCurrency));
+      setCashValue(fallbackCashValue(currentPortfolio, baseCurrency));
+      if (currentPortfolio.source === "example") return;
 
       try {
         const response = await fetch("/api/portfolio-quotes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            positions: parsed?.positions,
-            cash: parsed?.cash,
+            positions: currentPortfolio.positions,
+            cash: currentPortfolio.cash,
             baseCurrency,
-            source: parsed?.source,
+            source: currentPortfolio.source,
           }),
           signal: controller.signal,
         });
@@ -265,6 +314,11 @@ export default function PortfolioVisualPage() {
 
     try {
       const result = parsePortfolioCsv(await file.text());
+      if (parsed?.source === "example") {
+        if (avatar === PELOSI_PORTRAIT_PATH) setAvatar(null);
+        if (title === "NANCY PELOSI") setTitle("MY PORTFOLIO");
+        setTopCount(6);
+      }
       setParsed(result);
       setFileName(file.name);
       setBaseCurrency(result.baseCurrency);
@@ -277,6 +331,23 @@ export default function PortfolioVisualPage() {
       setCashValue(0);
       setError(caught instanceof Error ? caught.message : t.importError);
     }
+  }
+
+  function loadPelosiExample() {
+    const example = {
+      ...PELOSI_Q2_2026_EXAMPLE,
+      positions: PELOSI_Q2_2026_EXAMPLE.positions.map((position) => ({ ...position })),
+    };
+    setError("");
+    setParsed(example);
+    setFileName(language === "uk" ? "Q2 2026 · модельна алокація" : "Q2 2026 · modeled allocation");
+    setTitle("NANCY PELOSI");
+    setAsOf(example.asOf ?? "2026-06-30");
+    setBaseCurrency(example.baseCurrency);
+    setTopCount(5);
+    setAvatar(PELOSI_PORTRAIT_PATH);
+    setResolvedPositions(fallbackPositions(example, example.baseCurrency));
+    setCashValue(fallbackCashValue(example, example.baseCurrency));
   }
 
   function handleDrop(event: DragEvent<HTMLButtonElement>) {
@@ -350,10 +421,27 @@ export default function PortfolioVisualPage() {
             <span>{t.uploadText}</span>
             <small>{t.formats}</small>
           </button>
-          <aside className="portfolioImportNotes">
-            <div><FileSpreadsheet size={20} /><p><strong>3 CSV formats</strong><span>{t.formats}</span></p></div>
-            <div><WalletCards size={20} /><p><strong>IBKR</strong><span>{t.ibkrHelp}</span></p></div>
-            <div><Check size={20} /><p><strong>Privacy</strong><span>{t.privacy}</span></p></div>
+          <aside className="portfolioEmptyAside">
+            <div className="portfolioExampleCard">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="Nancy Pelosi" src={PELOSI_PORTRAIT_PATH} />
+              <div>
+                <small>{t.exampleEyebrow}</small>
+                <strong>{t.exampleTitle}</strong>
+                <p>{t.exampleText}</p>
+                <button type="button" onClick={loadPelosiExample}>
+                  <Sparkles size={15} /> {t.exampleAction} <ArrowRight size={15} />
+                </button>
+                <a href={PELOSI_ALLOCATION_SOURCE_URL} target="_blank" rel="noreferrer">
+                  {t.allocationSource} <ExternalLink size={12} />
+                </a>
+              </div>
+            </div>
+            <div className="portfolioImportNotes">
+              <div><FileSpreadsheet size={20} /><p><strong>3 CSV formats</strong><span>{t.formats}</span></p></div>
+              <div><WalletCards size={20} /><p><strong>IBKR</strong><span>{t.ibkrHelp}</span></p></div>
+              <div><Check size={20} /><p><strong>Privacy</strong><span>{t.privacy}</span></p></div>
+            </div>
           </aside>
         </section>
       ) : (
@@ -363,7 +451,7 @@ export default function PortfolioVisualPage() {
               <div className="portfolioImportBadge">
                 <span className="portfolioSourceIcon"><FileSpreadsheet size={19} /></span>
                 <span>
-                  <small>{t.detected}: {sourceLabels[parsed.source]}</small>
+                  <small>{t.detected}: {sourceLabels[parsed.source][language]}</small>
                   <strong>{fileName}</strong>
                   <small>{parsed.positions.length} {t.positions} · {t.asOf} {formatShortDate(parsed.asOf, language)}</small>
                 </span>
@@ -378,17 +466,19 @@ export default function PortfolioVisualPage() {
                   <span>{t.portfolioName}</span>
                   <input value={title} maxLength={28} onChange={(event) => setTitle(event.target.value)} />
                 </label>
-                <div className="portfolioFieldRow">
+                <div className={`portfolioFieldRow ${parsed.source === "example" ? "single" : ""}`}>
                   <label className="portfolioField">
                     <span><CalendarDays size={14} /> {t.date}</span>
-                    <input type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
+                    <input type="date" value={asOf} disabled={parsed.source === "example"} onChange={(event) => setAsOf(event.target.value)} />
                   </label>
-                  <label className="portfolioField">
-                    <span>{t.currency}</span>
-                    <select value={baseCurrency} onChange={(event) => setBaseCurrency(event.target.value)}>
-                      {BASE_CURRENCIES.map((currency) => <option key={currency}>{currency}</option>)}
-                    </select>
-                  </label>
+                  {parsed.source !== "example" ? (
+                    <label className="portfolioField">
+                      <span>{t.currency}</span>
+                      <select value={baseCurrency} onChange={(event) => setBaseCurrency(event.target.value)}>
+                        {BASE_CURRENCIES.map((currency) => <option key={currency}>{currency}</option>)}
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
                 <label className="portfolioField portfolioRangeField">
                   <span>{t.topCount}<strong>{topCount}</strong></span>
@@ -407,10 +497,12 @@ export default function PortfolioVisualPage() {
                     ) : null}
                   </div>
                 </div>
-                <button className="portfolioRefreshButton" type="button" disabled={loading} onClick={() => setParsed({ ...parsed })}>
-                  {loading ? <Loader2 className="spinning" size={17} /> : <RefreshCw size={17} />}
-                  {loading ? t.refreshing : t.refresh}
-                </button>
+                {parsed.source !== "example" ? (
+                  <button className="portfolioRefreshButton" type="button" disabled={loading} onClick={() => setParsed({ ...parsed })}>
+                    {loading ? <Loader2 className="spinning" size={17} /> : <RefreshCw size={17} />}
+                    {loading ? t.refreshing : t.refresh}
+                  </button>
+                ) : null}
               </div>
 
               {parsed.warnings.length ? (
@@ -418,11 +510,28 @@ export default function PortfolioVisualPage() {
                   {parsed.warnings.map((warning) => <p key={warning}>{warning}</p>)}
                 </div>
               ) : null}
+
+              {parsed.source === "example" ? (
+                <div className="portfolioDisclosureNote">
+                  <Landmark size={20} />
+                  <div>
+                    <strong>{t.disclosureBasisTitle}</strong>
+                    <p>{t.disclosureBasisText}</p>
+                    <span>
+                      <a href={PELOSI_ALLOCATION_SOURCE_URL} target="_blank" rel="noreferrer">{t.allocationSource} <ExternalLink size={12} /></a>
+                      <a href={PELOSI_ANNUAL_DISCLOSURE_URL} target="_blank" rel="noreferrer">{t.annualDisclosure} <ExternalLink size={12} /></a>
+                      <a href={PELOSI_Q1_PTR_URL} target="_blank" rel="noreferrer">{t.q1Transactions} <ExternalLink size={12} /></a>
+                      <a href={PELOSI_Q2_PTR_URL} target="_blank" rel="noreferrer">{t.q2Transactions} <ExternalLink size={12} /></a>
+                      <a href={PELOSI_PORTRAIT_SOURCE_URL} target="_blank" rel="noreferrer">{t.portraitSource} <ExternalLink size={12} /></a>
+                    </span>
+                  </div>
+                </div>
+              ) : null}
             </aside>
 
             <section className="portfolioPosterColumn">
               <div className="portfolioPosterToolbar">
-                <span>{formatMoney(totalValue, baseCurrency, language)}</span>
+                <span>{parsed.source === "example" ? t.modeledAllocation : formatMoney(totalValue, baseCurrency, language)}</span>
                 <div>
                   <button type="button" className="portfolioSecondaryAction" disabled={Boolean(exporting)} onClick={() => void downloadPoster("svg")}>
                     {exporting === "svg" ? <Loader2 className="spinning" size={16} /> : null}{t.downloadSvg}
@@ -437,12 +546,15 @@ export default function PortfolioVisualPage() {
                 <PortfolioPoster
                   avatar={avatar}
                   asOf={asOf}
+                  asOfLabel={parsed.source === "example" ? "Q2 2026" : undefined}
                   labelLayouts={labelLayouts}
                   segments={segments}
-                  subtitle={t.chartSubtitle}
-                  byAllocation={t.byAllocation}
+                  subtitle={parsed.source === "example" ? t.disclosureChartSubtitle : t.chartSubtitle}
+                  byAllocation={parsed.source === "example" ? t.disclosureByAllocation : t.byAllocation}
                   title={title || "MY PORTFOLIO"}
                   posterRef={posterRef}
+                  sourceNote={parsed.source === "example" ? t.disclosurePosterSource : undefined}
+                  sourceUrl={parsed.source === "example" ? PELOSI_ALLOCATION_SOURCE_URL : undefined}
                 />
               </div>
             </section>
@@ -453,8 +565,9 @@ export default function PortfolioVisualPage() {
             cashValue={cashValue}
             language={language}
             positions={resolvedPositions}
-            source={sourceLabels[parsed.source]}
+            source={sourceLabels[parsed.source][language]}
             totalValue={totalValue}
+            estimated={parsed.source === "example"}
           />
         </>
       )}
@@ -477,19 +590,25 @@ export default function PortfolioVisualPage() {
 function PortfolioPoster({
   avatar,
   asOf,
+  asOfLabel,
   byAllocation,
   labelLayouts,
   posterRef,
   segments,
+  sourceNote,
+  sourceUrl,
   subtitle,
   title,
 }: {
   avatar: string | null;
   asOf: string;
+  asOfLabel?: string;
   byAllocation: string;
   labelLayouts: LabelLayout[];
   posterRef: React.RefObject<SVGSVGElement | null>;
   segments: VisualSegment[];
+  sourceNote?: string;
+  sourceUrl?: string;
   subtitle: string;
   title: string;
 }) {
@@ -528,7 +647,7 @@ function PortfolioPoster({
       <line x1="82" y1="250" x2="222" y2="250" stroke="#1b2028" strokeWidth="3" />
       <line x1="578" y1="250" x2="718" y2="250" stroke="#1b2028" strokeWidth="3" />
       <text x="400" y="262" textAnchor="middle" fill="#171b22" fontFamily="Helvetica Neue, Arial, sans-serif" fontSize="29" fontWeight="800" letterSpacing="5">{subtitle}</text>
-      <text x="400" y="302" textAnchor="middle" fill="#73777d" fontFamily="Helvetica Neue, Arial, sans-serif" fontSize="17" fontWeight="500" letterSpacing="4">{byAllocation} {formatPosterDate(asOf)}</text>
+      <text x="400" y="302" textAnchor="middle" fill="#73777d" fontFamily="Helvetica Neue, Arial, sans-serif" fontSize="17" fontWeight="500" letterSpacing="4">{byAllocation} {asOfLabel ?? formatPosterDate(asOf)}</text>
 
       {segments.length ? segments.map((segment) => (
         <path
@@ -556,6 +675,11 @@ function PortfolioPoster({
       )}
       <circle cx={CHART_CENTER_X} cy={CHART_CENTER_Y} r="101" fill="none" stroke="#f8f7f3" strokeWidth="8" />
 
+      {sourceNote ? (
+        <a href={sourceUrl} target="_blank" rel="noreferrer">
+          <text x="400" y="928" textAnchor="middle" fill="#4f555d" fontFamily="Helvetica Neue, Arial, sans-serif" fontSize="11" fontWeight="700" letterSpacing="1.1">{sourceNote}</text>
+        </a>
+      ) : null}
       <a href={PORTFOLIO_VISUAL_URL} target="_blank" rel="noreferrer">
         <text x="400" y="960" textAnchor="middle" fill="#4f555d" opacity="0.56" fontFamily="Helvetica Neue, Arial, sans-serif" fontSize="12" fontWeight="600" letterSpacing="0.7">q-garp.netlify.app/portfolio-visual</text>
       </a>
@@ -612,9 +736,11 @@ function AllocationTable({
   positions,
   source,
   totalValue,
+  estimated,
 }: {
   baseCurrency: string;
   cashValue: number;
+  estimated: boolean;
   language: Language;
   positions: ResolvedPosition[];
   source: string;
@@ -629,28 +755,32 @@ function AllocationTable({
     <section className="portfolioAllocationPanel">
       <div className="portfolioAllocationHeader">
         <div><p>{t.holdings}</p><h3>{source}</h3></div>
-        <strong>{formatMoney(totalValue, baseCurrency, language)}</strong>
+        <strong>{estimated ? t.modeledAllocation : formatMoney(totalValue, baseCurrency, language)}</strong>
       </div>
       <div className="portfolioTableWrap">
         <table className="portfolioTable">
-          <thead><tr><th>{t.holding}</th><th>{t.value}</th><th>{t.share}</th><th>{t.source}</th></tr></thead>
+          <thead><tr><th>{t.holding}</th>{!estimated ? <th>{t.value}</th> : null}<th>{t.share}</th><th>{t.source}</th></tr></thead>
           <tbody>
             {rows.map((position) => (
               <tr key={position.sourceSymbol}>
                 <td>
-                  <span className="portfolioTableLogo">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img alt="" loading="lazy" src={companyLogoUrl(position.sourceSymbol)} />
-                  </span>
-                  <span><strong>{position.sourceSymbol}</strong><small>{position.name}</small></span>
+                  {position.sourceSymbol === "OTHER" ? (
+                    <span className="portfolioTableAggregate" aria-hidden="true"><i /><i /><i /><i /></span>
+                  ) : (
+                    <span className="portfolioTableLogo">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img alt="" loading="lazy" src={companyLogoUrl(position.sourceSymbol)} />
+                    </span>
+                  )}
+                  <span><strong>{position.sourceSymbol}</strong><small>{position.sourceSymbol === "OTHER" ? t.otherModeledHoldings : position.name}</small></span>
                 </td>
-                <td>{formatMoney(position.valueBase, baseCurrency, language)}</td>
+                {!estimated ? <td>{formatMoney(position.valueBase, baseCurrency, language)}</td> : null}
                 <td>{formatPercentage(totalValue ? position.valueBase / totalValue * 100 : 0)}</td>
-                <td><span className={`portfolioPriceStatus ${position.live ? "live" : ""}`}>{position.live ? t.current : t.fallback}</span></td>
+                <td><span className={`portfolioPriceStatus ${!estimated && position.live ? "live" : ""}`}>{estimated ? t.estimate : position.live ? t.current : t.fallback}</span></td>
               </tr>
             ))}
             {cashValue > 0.01 ? (
-              <tr><td><span className="portfolioTableCash">$</span><span><strong>{t.cash}</strong><small>{baseCurrency}</small></span></td><td>{formatMoney(cashValue, baseCurrency, language)}</td><td>{formatPercentage(totalValue ? cashValue / totalValue * 100 : 0)}</td><td><span className="portfolioPriceStatus">CSV</span></td></tr>
+              <tr><td><span className="portfolioTableCash">$</span><span><strong>{t.cash}</strong><small>{baseCurrency}</small></span></td>{!estimated ? <td>{formatMoney(cashValue, baseCurrency, language)}</td> : null}<td>{formatPercentage(totalValue ? cashValue / totalValue * 100 : 0)}</td><td><span className="portfolioPriceStatus">{estimated ? t.estimate : "CSV"}</span></td></tr>
             ) : null}
           </tbody>
         </table>
@@ -689,8 +819,12 @@ function buildSegments(positions: ResolvedPosition[], cashValue: number, topCoun
   const positivePositions = positions
     .filter((position) => Number.isFinite(position.valueBase) && position.valueBase > 0.01)
     .sort((left, right) => right.valueBase - left.valueBase);
-  const named = positivePositions.slice(0, topCount);
-  const otherValue = positivePositions.slice(topCount).reduce((sum, position) => sum + position.valueBase, 0);
+  const aggregateOtherValue = positivePositions
+    .filter((position) => position.sourceSymbol === "OTHER")
+    .reduce((sum, position) => sum + position.valueBase, 0);
+  const individualPositions = positivePositions.filter((position) => position.sourceSymbol !== "OTHER");
+  const named = individualPositions.slice(0, topCount);
+  const otherValue = aggregateOtherValue + individualPositions.slice(topCount).reduce((sum, position) => sum + position.valueBase, 0);
   const rawSegments: Omit<VisualSegment, "percentage" | "startAngle" | "endAngle">[] = named.map((position, index) => ({
     key: position.sourceSymbol,
     symbol: position.sourceSymbol,

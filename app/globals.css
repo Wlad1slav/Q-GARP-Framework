@@ -3142,6 +3142,87 @@ button:disabled {
   gap: 18px;
 }
 
+.portfolioEmptyAside {
+  display: grid;
+  gap: 12px;
+}
+
+.portfolioExampleCard {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  color: #fff;
+  background: #181d25;
+  box-shadow: 0 16px 38px rgba(20, 25, 32, 0.16);
+}
+
+.portfolioExampleCard > img {
+  width: 92px;
+  height: 100%;
+  min-height: 184px;
+  object-fit: cover;
+  object-position: center 20%;
+  filter: saturate(0.86) contrast(1.03);
+}
+
+.portfolioExampleCard > div {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  justify-items: start;
+  gap: 7px;
+}
+
+.portfolioExampleCard small {
+  color: #ee766d;
+  font-size: 0.65rem;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.portfolioExampleCard strong {
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.portfolioExampleCard p {
+  margin: 0;
+  color: #bfc5cd;
+  font-size: 0.68rem;
+  line-height: 1.42;
+}
+
+.portfolioExampleCard button {
+  display: inline-flex;
+  min-height: 35px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 0 10px;
+  color: #1b2028;
+  background: #fff;
+  border: 1px solid #fff;
+  font-size: 0.7rem;
+  font-weight: 820;
+}
+
+.portfolioExampleCard button svg:last-child {
+  margin-left: auto;
+}
+
+.portfolioExampleCard a,
+.portfolioDisclosureNote a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font-size: 0.66rem;
+  font-weight: 760;
+  text-underline-offset: 3px;
+}
+
 .portfolioDropzone {
   display: grid;
   min-height: 310px;
@@ -3374,10 +3455,21 @@ button:disabled {
   box-shadow: 0 0 0 3px rgba(37, 111, 186, 0.12);
 }
 
+.portfolioField input:disabled,
+.portfolioField select:disabled {
+  color: #777e87;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .portfolioFieldRow {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(95px, 0.7fr);
   gap: 9px;
+}
+
+.portfolioFieldRow.single {
+  grid-template-columns: 1fr;
 }
 
 .portfolioRangeField strong {
@@ -3453,6 +3545,43 @@ button:disabled {
   margin: 8px 0;
   font-size: 0.69rem;
   line-height: 1.45;
+}
+
+.portfolioDisclosureNote {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  padding: 13px;
+  color: #354352;
+  background: #eef3f7;
+  border-left: 3px solid #667f98;
+}
+
+.portfolioDisclosureNote > svg {
+  margin-top: 1px;
+  color: #526f8b;
+}
+
+.portfolioDisclosureNote strong {
+  display: block;
+  font-size: 0.75rem;
+}
+
+.portfolioDisclosureNote p {
+  margin: 6px 0 9px;
+  color: #64707c;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.portfolioDisclosureNote span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.portfolioDisclosureNote a {
+  color: #3f5f7c;
 }
 
 .portfolioPosterColumn {
@@ -3582,6 +3711,7 @@ button:disabled {
 }
 
 .portfolioTableLogo,
+.portfolioTableAggregate,
 .portfolioTableCash {
   display: grid;
   width: 34px;
@@ -3590,6 +3720,23 @@ button:disabled {
   flex: 0 0 auto;
   overflow: hidden;
   border-radius: 7px;
+}
+
+.portfolioTableAggregate {
+  grid-template-columns: repeat(2, 8px);
+  place-content: center;
+  gap: 3px;
+  background: #eef0f2;
+}
+
+.portfolioTableAggregate i {
+  width: 8px;
+  height: 8px;
+  background: #4b525c;
+}
+
+.portfolioTableAggregate i:last-child {
+  transform: rotate(45deg);
 }
 
 .portfolioTableLogo img {
@@ -3658,7 +3805,8 @@ button:disabled {
   }
 
   .portfolioImportBadge,
-  .portfolioWarnings {
+  .portfolioWarnings,
+  .portfolioDisclosureNote {
     grid-column: 1;
   }
 
@@ -3686,7 +3834,8 @@ button:disabled {
 
   .portfolioControlPanel,
   .portfolioImportBadge,
-  .portfolioWarnings {
+  .portfolioWarnings,
+  .portfolioDisclosureNote {
     grid-column: auto;
     grid-row: auto;
   }
