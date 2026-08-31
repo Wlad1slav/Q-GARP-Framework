@@ -510,40 +510,122 @@ button:disabled {
   border-color: var(--line);
 }
 
-.languageToggle {
-  display: inline-grid;
-  grid-template-columns: repeat(2, 42px);
+.languageDropdown {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.languageDropdownTrigger {
+  display: inline-flex;
   height: 46px;
-  overflow: hidden;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--ink);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 0;
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.03);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
-.languageOption {
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  padding: 0;
+.languageDropdownTrigger:hover,
+.languageDropdownTrigger[aria-expanded="true"] {
+  border-color: rgba(31, 35, 40, 0.28);
+  box-shadow: 0 10px 24px rgba(31, 35, 40, 0.1);
+}
+
+.languageDropdownTrigger:hover {
+  transform: translateY(-1px);
+}
+
+.languageDropdownTrigger:focus-visible,
+.languageDropdownOption:focus-visible {
+  outline: 3px solid rgba(37, 111, 186, 0.18);
+  outline-offset: 2px;
+}
+
+.languageFlag {
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  overflow: hidden;
+  border: 1px solid rgba(31, 35, 40, 0.16);
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
+}
+
+.languageCode {
+  min-width: 19px;
+  font-size: 0.76rem;
+  font-weight: 820;
+  letter-spacing: 0.04em;
+}
+
+.languageChevron {
+  flex: 0 0 auto;
   color: var(--muted);
+  transition: transform 140ms ease;
+}
+
+.languageDropdownTrigger[aria-expanded="true"] .languageChevron {
+  transform: rotate(180deg);
+}
+
+.languageDropdownMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  width: 184px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: 0 16px 38px rgba(31, 35, 40, 0.15);
+}
+
+.languageDropdownMenu[hidden] {
+  display: none;
+}
+
+.languageDropdownOption {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 16px;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  color: var(--ink);
   background: transparent;
   border: 0;
-  font-size: 0.78rem;
-  font-weight: 780;
+  border-radius: 0;
+  font-size: 0.84rem;
+  font-weight: 720;
+  text-align: left;
 }
 
-.languageOption + .languageOption {
-  border-left: 1px solid var(--line);
+.languageDropdownOption:hover:not(:disabled),
+.languageDropdownOption.active {
+  background: var(--panel-2);
 }
 
-.languageOption.active {
-  color: #fff;
-  background: var(--ink);
+.languageDropdownOption:disabled {
+  opacity: 0.55;
 }
 
-.languageOption:focus-visible {
-  outline: 3px solid rgba(37, 111, 186, 0.18);
-  outline-offset: -3px;
+.languageCheck {
+  color: var(--green);
+  opacity: 0;
+}
+
+.languageDropdownOption.active .languageCheck {
+  opacity: 1;
 }
 
 .mobileDrawerBackdrop {
@@ -624,7 +706,21 @@ button:disabled {
 
 .mobileLanguageToggle {
   width: 100%;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mobileLanguageToggle .languageDropdownTrigger {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.mobileLanguageToggle .languageChevron {
+  margin-left: auto;
+}
+
+.mobileLanguageToggle .languageDropdownMenu {
+  right: 0;
+  left: 0;
+  width: 100%;
 }
 
 @keyframes drawerSlideIn {

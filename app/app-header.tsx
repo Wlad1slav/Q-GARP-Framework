@@ -1,10 +1,22 @@
 "use client";
 
-import { BarChart3, ExternalLink, Loader2, Menu, PieChart, RefreshCw, Search, Settings, X } from "lucide-react";
+import {
+  BarChart3,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+  Menu,
+  PieChart,
+  RefreshCw,
+  Search,
+  Settings,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import {
   APP_SETTINGS_STORAGE_KEY,
   DEFAULT_ANALYSIS_SETTINGS,
@@ -28,7 +40,6 @@ import {
 import { readBrowserStorageItem, writeBrowserStorageItem } from "@/lib/browser-storage";
 import {
   defaultLanguage,
-  languageLabels,
   LANGUAGE_STORAGE_KEY,
   normalizeLanguage,
   supportedLanguages,
@@ -306,14 +317,14 @@ export function AppHeader() {
           </form>
 
           <div className="desktopHeaderControls">
-            <HeaderSettingsModule
+            {/* <HeaderSettingsModule
               language={language}
               menuId="app-settings-menu"
               supplementalMetricSettings={supplementalMetricSettings}
               useSectorWeights={useSectorWeights}
               onSupplementalMetricChange={changeSupplementalMetric}
               onUseSectorWeightsChange={changeUseSectorWeights}
-            />
+            /> */}
             <LanguageToggle
               ariaLabel={t.aria.language}
               language={language}
@@ -441,21 +452,95 @@ function LanguageToggle({
   loading: boolean;
   onLanguageChange: (language: Language) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  function selectLanguage(nextLanguage: Language) {
+    setOpen(false);
+    onLanguageChange(nextLanguage);
+  }
+
   return (
-    <div className={`languageToggle ${className}`.trim()} role="group" aria-label={ariaLabel}>
-      {supportedLanguages.map((nextLanguage) => (
-        <button
-          aria-pressed={language === nextLanguage}
-          className={`languageOption ${language === nextLanguage ? "active" : ""}`}
-          disabled={loading && language !== nextLanguage}
-          key={nextLanguage}
-          type="button"
-          onClick={() => onLanguageChange(nextLanguage)}
-        >
-          {languageLabels[nextLanguage]}
-        </button>
-      ))}
+    <div className={`languageDropdown ${className}`.trim()} ref={containerRef}>
+      <button
+        className="languageDropdownTrigger"
+        type="button"
+        aria-controls={menuId}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <LanguageFlag language={language} />
+        <span className="languageCode">{language.toUpperCase()}</span>
+        <ChevronDown aria-hidden="true" className="languageChevron" size={15} />
+      </button>
+
+      <div className="languageDropdownMenu" hidden={!open} id={menuId} role="menu" aria-label={ariaLabel}>
+        {supportedLanguages.map((nextLanguage) => {
+          const selected = language === nextLanguage;
+
+          return (
+            <button
+              aria-checked={selected}
+              className={`languageDropdownOption ${selected ? "active" : ""}`}
+              disabled={loading && !selected}
+              key={nextLanguage}
+              role="menuitemradio"
+              type="button"
+              onClick={() => selectLanguage(nextLanguage)}
+            >
+              <LanguageFlag language={nextLanguage} />
+              <span>{nextLanguage === "uk" ? "Українська" : "English"}</span>
+              <Check aria-hidden="true" className="languageCheck" size={16} />
+            </button>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+function LanguageFlag({ language }: { language: Language }) {
+  if (language === "uk") {
+    return (
+      <svg aria-hidden="true" className="languageFlag" viewBox="0 0 24 24">
+        <path d="M0 0h24v12H0z" fill="#0057b7" />
+        <path d="M0 12h24v12H0z" fill="#ffd700" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" className="languageFlag" viewBox="0 0 24 24">
+      <path d="M0 0h24v24H0z" fill="#21468b" />
+      <path d="M0 0h3.5L24 20.5V24h-3.5L0 3.5zm24 0v3.5L3.5 24H0v-3.5L20.5 0z" fill="#fff" />
+      <path d="M0 0h2.1L24 21.9V24h-2.1L0 2.1zm24 0v2.1L2.1 24H0v-2.1L21.9 0z" fill="#cf142b" />
+      <path d="M8 0h8v24H8zM0 8h24v8H0z" fill="#fff" />
+      <path d="M10 0h4v24h-4zM0 10h24v4H0z" fill="#cf142b" />
+    </svg>
   );
 }
 
