@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, ExternalLink, Loader2, Menu, RefreshCw, Search, Settings, X } from "lucide-react";
+import { BarChart3, ExternalLink, Loader2, Menu, PieChart, RefreshCw, Search, Settings, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -44,16 +44,18 @@ const headerCopy = {
   uk: {
     menu: "Головне меню",
     sp500Top: "S&P 500 Top",
+    portfolioVisual: "Візуал портфеля",
     methodology: "Методологія",
     github: "Wlad1slav / Q-GARP-Framework",
   },
   en: {
     menu: "Main menu",
     sp500Top: "S&P 500 Top",
+    portfolioVisual: "Portfolio Visual",
     methodology: "Methodology",
     github: "Wlad1slav / Q-GARP-Framework",
   },
-} satisfies Record<Language, { menu: string; sp500Top: string; methodology: string; github: string }>;
+} satisfies Record<Language, { menu: string; sp500Top: string; portfolioVisual: string; methodology: string; github: string }>;
 
 type HeaderCopy = (typeof headerCopy)[Language];
 
@@ -409,6 +411,10 @@ function HeaderNavLinks({
       <Link className="navLink" href="/sp500-top" onClick={onNavigate}>
         <BarChart3 size={16} />
         <span>{copy.sp500Top}</span>
+      </Link>
+      <Link className="navLink" href="/portfolio-visual" onClick={onNavigate}>
+        <PieChart size={16} />
+        <span>{copy.portfolioVisual}</span>
       </Link>
       <a className="navLink" href={METHODOLOGY_SCORING_PROFILES_URL} target="_blank" rel="noreferrer" onClick={onNavigate}>
         <ExternalLink size={16} />

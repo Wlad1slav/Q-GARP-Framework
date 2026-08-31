@@ -19,6 +19,9 @@ helper, not investment advice.
   margin quality, and PEG with SBC.
 - S&P 500 top page at `/sp500-top`, with live batch scanning and leaderboards
   for each of the five indicators.
+- Portfolio poster generator at `/portfolio-visual` with Yahoo Portfolio,
+  Revolut Stocks, and IBKR Activity Statement/Flex Query CSV imports, live
+  quote refresh, company logos, portrait upload, and PNG/SVG export.
 - Automatic ACTUAL_PEERS peer groups with Yahoo fallback plus manually saved peer groups.
 - Ukrainian and English UI copy.
 - Lightweight API routes for ticker analysis, S&P 500 constituents, and batch
@@ -30,6 +33,8 @@ helper, not investment advice.
   evidence for all five indicators.
 - `/sp500-top` - S&P 500 scanner that ranks companies by overall score and by
   each indicator: doubling pace, valuation, growth, margins, and PEG with SBC.
+- `/portfolio-visual` - turns Yahoo, Revolut, or IBKR portfolio CSV exports into
+  a shareable allocation poster with company logos and an optional portrait.
 
 ## API
 
