@@ -20,6 +20,24 @@ export interface EvidenceItem {
   value: string;
 }
 
+export interface ScoringSignalResult {
+  label: string;
+  value: string;
+  rule: string;
+  score: number;
+  /** Normalized share of the indicator, from 0 to 1. */
+  weight: number;
+  observed: boolean;
+  critical: boolean;
+}
+
+export interface RiskBreakdown {
+  items: Array<{ label: string; points: number }>;
+  /** Explicit risk points after the 26-point cap. */
+  explicitPenalty: number;
+  confidencePenalty: number;
+}
+
 export interface IndicatorResult {
   id: "double" | "valuation" | "growth" | "margins" | "peg";
   title: string;
@@ -30,6 +48,7 @@ export interface IndicatorResult {
   weight: number;
   confidence: number;
   evidence: EvidenceItem[];
+  signals?: ScoringSignalResult[];
 }
 
 export interface AnalysisResult {
@@ -50,6 +69,7 @@ export interface AnalysisResult {
   scoringProfile: string;
   sectorWeightsEnabled: boolean;
   riskFlags: string[];
+  riskBreakdown?: RiskBreakdown;
   tone: MetricTone;
   label: string;
   indicators: IndicatorResult[];

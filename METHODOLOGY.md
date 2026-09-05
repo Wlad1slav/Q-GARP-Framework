@@ -40,6 +40,21 @@ The final result consists of:
 - `riskPenalty` - a penalty for low data confidence and explicit risks.
 - `score` - the final 0-100 score.
 - `riskFlags` - a short list of issues that reduced the score.
+- `riskBreakdown` - every triggered risk with its nominal points, the explicit
+  penalty after the 26-point cap, and the separate confidence penalty. The final
+  combined penalty is still capped at 30.
+- `indicators[].signals` - the actual scored inputs, including their values,
+  scoring rules, unrounded scores, normalized weights within the indicator,
+  and whether each input was observed or replaced with a missing-data score.
+
+The ticker page shows each indicator's earned contribution (`score × weight`)
+and the gap to its theoretical maximum (`(100 − score) × weight`). The gap is
+already reflected in the raw score and is not an additional penalty. Expand an
+indicator to inspect its inputs or filter to scores below 45 and missing inputs.
+Input weights are normalized within each indicator; their point contributions
+sum to that indicator's score before rounding. Displayed contributions and
+percentages may be rounded. Risk calculations use overall confidence before its
+display rounding. Supplemental metrics do not contribute to the Q-GARP score.
 
 ## 2. Core Formula
 

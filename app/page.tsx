@@ -5,17 +5,15 @@ import {
   BadgeDollarSign,
   BarChart3,
   Calculator,
-  CheckCircle2,
-  CircleAlert,
   ClipboardCopy,
   Loader2,
+  Info,
   RotateCcw,
   Save,
   Search,
   ShieldCheck,
   TrendingUp,
   UsersRound,
-  XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
@@ -29,8 +27,6 @@ import {
 } from "@/lib/analysis-settings";
 import type {
   AnalysisResult,
-  IndicatorResult,
-  MetricTone,
   SupplementalMetricId,
   SupplementalMetricResult,
   SupplementalMetricsResult,
@@ -60,21 +56,8 @@ import { JoinedTextWithActualPeersLinks, TextWithActualPeersLink } from "@/lib/a
 import { termDefinitions, termForLabel, type TermKey } from "@/lib/term-definitions";
 import { normalizeTicker } from "@/lib/ticker";
 import Image from "next/image";
-
-const metricIcons = {
-  double: TrendingUp,
-  valuation: BadgeDollarSign,
-  growth: BarChart3,
-  margins: ShieldCheck,
-  peg: Calculator,
-} satisfies Record<IndicatorResult["id"], typeof TrendingUp>;
-
-const toneIcons = {
-  good: CheckCircle2,
-  watch: CircleAlert,
-  bad: XCircle,
-  unknown: AlertTriangle,
-} satisfies Record<MetricTone, typeof CheckCircle2>;
+import { ScoreExplanation } from "./score-explanation";
+import { scoringCopy } from "@/lib/scoring-copy";
 
 const supplementalMetricIcons = {
   totalShareholderYield: BadgeDollarSign,
@@ -90,7 +73,7 @@ const supplementalMetricIcons = {
 
 const supplementalChartMetricIds: SupplementalMetricId[] = ["impliedUpside", "momentum", "epsRevisionTrend"];
 
-const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v3";
+const ANALYSIS_CACHE_STORAGE_KEY = "invest-rate.analysis-results.v4";
 const SUPPLEMENTAL_CACHE_STORAGE_KEY = "invest-rate.supplemental-metrics.v2";
 const ANALYSIS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_STORED_ANALYSES = 60;
@@ -288,6 +271,7 @@ export default function Home() {
         ticker: cleanTicker,
         lang: requestLanguage,
         [SECTOR_WEIGHTS_QUERY_PARAM]: sectorWeightsSearchParam(requestUseSectorWeights),
+        breakdown: "1",
       });
       const cacheKey = analysisCacheKey(cleanTicker, peers, requestLanguage, requestUseSectorWeights);
       const cachedAnalysis = readCachedAnalysis(cacheKey);
@@ -478,7 +462,7 @@ export default function Home() {
   }
 
   return (
-    <main className="appShell">
+    <main className="appShell tickerPage">
         {analysis ? (
           <>
             <div className="scoreCompany">
@@ -501,7 +485,7 @@ export default function Home() {
 
             <section className="summaryBand" aria-label={t.aria.summary}>
 
-              <div className="scoreBlock">
+              <div className={`scoreBlock scoreTone-${analysis.tone}`}>
                 <div className="scoreRing" style={{ "--score": analysis.score } as React.CSSProperties}>
                   <strong>{analysis.score}</strong>
                 </div>
@@ -525,20 +509,6 @@ export default function Home() {
                 {analysis.currency ?? t.currencyUnavailable}
               </span>
               <span className="miniChip">
-                <ShieldCheck size={15} />
-                {t.scoreMeta.confidence}: {analysis.confidence}/100
-              </span>
-              <span className="miniChip">
-                <Calculator size={15} />
-                {t.scoreMeta.rawScore}: {analysis.rawScore}/100
-              </span>
-              {analysis.riskPenalty ? (
-                <span className="miniChip">
-                  <CircleAlert size={15} />
-                  {t.scoreMeta.riskPenalty}: -{analysis.riskPenalty}
-                </span>
-              ) : null}
-              <span className="miniChip">
                 <BarChart3 size={15} />
                 {t.scoreMeta.profile}: {analysis.scoringProfile}
               </span>
@@ -561,16 +531,7 @@ export default function Home() {
               ) : null}
             </div>
 
-            {enabledSupplementalMetricIds.length ? (
-              <SupplementalMetricsPanel
-                enabledMetricIds={enabledSupplementalMetricIds}
-                errors={supplementalErrors}
-                language={language}
-                loading={supplementalLoading}
-                metrics={supplementalMetrics}
-                notes={supplementalNotes}
-              />
-            ) : null}
+            <ScoreExplanation analysis={analysis} language={language} />
 
             <section className={`peerEditor ${analysis.peerSource === "recommended" ? "peerEditorWarn" : ""}`}>
               <div className="peerEditorText">
@@ -637,18 +598,22 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="metricGrid" aria-label={t.aria.metrics}>
-              {analysis.indicators.map((indicator) => (
-                <MetricCard
-                  actualPeersSourceUrl={actualPeersSourceUrl}
-                  indicator={indicator}
-                  key={indicator.id}
+            {enabledSupplementalMetricIds.length ? (
+              <>
+                <p className="supplementalScoreNote">
+                  <Info size={16} />
+                  {scoringCopy[language].supplemental}
+                </p>
+                <SupplementalMetricsPanel
+                  enabledMetricIds={enabledSupplementalMetricIds}
+                  errors={supplementalErrors}
                   language={language}
-                  scoreAria={t.aria.score}
-                  toneLabels={t.toneLabels}
+                  loading={supplementalLoading}
+                  metrics={supplementalMetrics}
+                  notes={supplementalNotes}
                 />
-              ))}
-            </section>
+              </>
+            ) : null}
 
             <p className="finePrint">
               <JoinedTextWithActualPeersLinks href={actualPeersSourceUrl} texts={analysis.dataNotes} />
@@ -1171,83 +1136,6 @@ function Fact({
       </span>
       <strong>{value ?? uiCopy[language].notAvailable}</strong>
     </div>
-  );
-}
-
-function MetricCard({
-  actualPeersSourceUrl,
-  indicator,
-  language,
-  scoreAria,
-  toneLabels,
-}: {
-  actualPeersSourceUrl?: string;
-  indicator: IndicatorResult;
-  language: Language;
-  scoreAria: (score: number) => string;
-  toneLabels: Record<MetricTone, string>;
-}) {
-  const Icon = metricIcons[indicator.id];
-  const ToneIcon = toneIcons[indicator.tone];
-  const fillClass = indicator.tone === "good" ? "" : indicator.tone;
-
-  return (
-    <article className="metricCard">
-      <div className="metricHeader">
-        <div className="metricIcon" aria-hidden="true">
-          <Icon size={19} />
-        </div>
-        <div className="metricTitle">
-          <h3>
-            <TermLabel
-              actualPeersSourceUrl={actualPeersSourceUrl}
-              label={indicator.title}
-              language={language}
-              termKey={termForLabel(indicator.title)}
-            />
-          </h3>
-          <small>
-            <TermLabel
-              actualPeersSourceUrl={actualPeersSourceUrl}
-              label={indicator.subtitle}
-              language={language}
-              termKey={termForLabel(indicator.subtitle)}
-            />
-          </small>
-        </div>
-      </div>
-
-      <p className="metricVerdict">{indicator.verdict}</p>
-      <span className={`tonePill tone-${indicator.tone}`}>
-        <ToneIcon size={15} />
-        {toneLabels[indicator.tone]}
-      </span>
-
-      <ul className="evidenceList">
-        {indicator.evidence.map((item) => (
-          <li key={`${indicator.id}-${item.label}`}>
-            <span>
-              <TermLabel
-                actualPeersSourceUrl={actualPeersSourceUrl}
-                label={item.label}
-                language={language}
-                termKey={termForLabel(item.label)}
-              />
-            </span>
-            <strong>{item.value}</strong>
-          </li>
-        ))}
-      </ul>
-
-      <div className="metricScore">
-        <div className="scoreBar" aria-label={scoreAria(indicator.score)}>
-          <div
-            className={`scoreFill ${fillClass}`}
-            style={{ "--fill": `${Math.max(4, indicator.score)}%` } as React.CSSProperties}
-          />
-        </div>
-      </div>
-    </article>
   );
 }
 

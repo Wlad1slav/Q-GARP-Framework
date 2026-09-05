@@ -1,8 +1,9 @@
 import YahooFinance from "yahoo-finance2";
 import { getActualPeerSymbols } from "./actual-peers";
-import type { AnalysisResult, EvidenceItem, IndicatorResult, MetricTone, PeerSource } from "./analysis-types";
+import type { AnalysisResult, EvidenceItem, IndicatorResult, MetricTone, PeerSource, ScoringSignalResult, RiskBreakdown } from "./analysis-types";
 import { analysisCopy, defaultLanguage, localeForLanguage, normalizeLanguage, type Language } from "./i18n";
 import type { QueuePriority } from "./priority-task-queue";
+import { signalLabels } from "./scoring-copy";
 import { normalizeTicker } from "./ticker";
 import { runCachedYahooRequest } from "./yahoo-request-queue";
 
@@ -51,6 +52,9 @@ const DEFAULT_INDICATOR_WEIGHTS: IndicatorWeightMap = {
 };
 
 type ScoreSignal = {
+  label: string;
+  value: string;
+  rule: string;
   score: number | undefined;
   weight?: number;
   missingScore?: number;
@@ -58,6 +62,7 @@ type ScoreSignal = {
 };
 
 type ScoreBreakdown = {
+  signals: ScoringSignalResult[];
   score: number;
   confidence: number;
   observedWeight: number;
@@ -601,6 +606,7 @@ function buildAnalysis({
     scoringProfile: profile.label[language],
     sectorWeightsEnabled: useSectorWeights,
     riskFlags: scoreSummary.riskFlags,
+    riskBreakdown: scoreSummary.riskBreakdown,
     tone,
     label,
     indicators,
@@ -619,12 +625,13 @@ function buildDoubleIndicator(growth: {
   forwardEarningsGrowth?: number;
 }, profile: ScoringProfile, language: Language): IndicatorResult {
   const copy = analysisCopy[language].indicators.double;
+  const explain = explainSignals(language);
   const signals = scoreSignals([
-    { score: growthPaceSignal(growth.revenueCagr3y, DOUBLE_CAGR), weight: 1.25, critical: true },
-    { score: growthPaceSignal(growth.netIncomeCagr3y, DOUBLE_CAGR), weight: 1.05, critical: true },
-    { score: growthPaceSignal(growth.fcfCagr3y, DOUBLE_CAGR), weight: profile.isFinancial ? 0.25 : 1, critical: !profile.isFinancial },
-    { score: growthPaceSignal(growth.forwardRevenueGrowth, DOUBLE_CAGR), weight: 0.55 },
-    { score: growthPaceSignal(growth.forwardEarningsGrowth, DOUBLE_CAGR), weight: 0.7 },
+    { ...explain.pace("revenueCagr", growth.revenueCagr3y), weight: 1.25, critical: true },
+    { ...explain.pace("incomeCagr", growth.netIncomeCagr3y), weight: 1.05, critical: true },
+    { ...explain.pace("fcfCagr", growth.fcfCagr3y), weight: profile.isFinancial ? 0.25 : 1, critical: !profile.isFinancial },
+    { ...explain.pace("forwardRevenue", growth.forwardRevenueGrowth), weight: 0.55 },
+    { ...explain.pace("forwardEarnings", growth.forwardEarningsGrowth), weight: 0.7 },
   ]);
 
   const values = [
@@ -648,6 +655,7 @@ function buildDoubleIndicator(growth: {
     score,
     weight: profile.weights.double,
     confidence: percentScore(signals.confidence),
+    signals: signals.signals,
     evidence: compactEvidence([
       [copy.evidence.requiredCagr, formatPercent(DOUBLE_CAGR, language)],
       [copy.evidence.revenueCagr3y, formatPercent(growth.revenueCagr3y, language)],
@@ -681,23 +689,24 @@ function buildValuationIndicator(
   const psWeight = profile.isFinancial ? 0.2 : 0.75;
   const evWeight = profile.isFinancial ? 0 : 0.7;
   const priceToBookWeight = profile.isFinancial ? 1 : profile.isCyclical ? 0.55 : 0.25;
+  const explain = explainSignals(language);
   const signals = scoreSignals([
-    { score: valuationDiscountSignal(current.trailingPE, current.marketPE), weight: 0.7 },
-    { score: valuationDiscountSignal(current.trailingPE, peers.trailingPE), weight: 1, critical: true },
-    { score: valuationDiscountSignal(current.forwardPE, peers.forwardPE), weight: 0.8 },
-    { score: valuationDiscountSignal(current.trailingPE, history.pe), weight: 0.85 },
-    { score: valuationDiscountSignal(current.priceToSales, history.ps), weight: psWeight },
-    { score: valuationDiscountSignal(current.priceToSales, peers.ps), weight: psWeight * 0.8 },
-    { score: valuationDiscountSignal(current.pfcf, history.pfcf), weight: pfcfWeight, critical: !profile.isFinancial },
-    { score: valuationDiscountSignal(current.evToEbitda, peers.evToEbitda), weight: evWeight },
-    { score: valuationDiscountSignal(current.priceToBook, peers.priceToBook), weight: priceToBookWeight },
+    { ...explain.discount("peMarket", current.trailingPE, current.marketPE), weight: 0.7 },
+    { ...explain.discount("pePeers", current.trailingPE, peers.trailingPE), weight: 1, critical: true },
+    { ...explain.discount("forwardPe", current.forwardPE, peers.forwardPE), weight: 0.8 },
+    { ...explain.discount("peHistory", current.trailingPE, history.pe), weight: 0.85 },
+    { ...explain.discount("psHistory", current.priceToSales, history.ps), weight: psWeight },
+    { ...explain.discount("psPeers", current.priceToSales, peers.ps), weight: psWeight * 0.8 },
+    { ...explain.discount("pfcfHistory", current.pfcf, history.pfcf), weight: pfcfWeight, critical: !profile.isFinancial },
+    { ...explain.discount("evPeers", current.evToEbitda, peers.evToEbitda), weight: evWeight },
+    { ...explain.discount("pbPeers", current.priceToBook, peers.priceToBook), weight: priceToBookWeight },
     {
-      score: profile.isFinancial ? lowerIsBetterSignal(current.priceToBook, 1.4, 2.6) : undefined,
+      ...explain.lower("pb", current.priceToBook, 1.4, 2.6),
       weight: profile.isFinancial ? 0.8 : 0,
     },
-    { score: signedProfitSignal(current.trailingNetIncome), weight: 0.7, missingScore: MISSING_SIGNAL_SCORE },
+    { ...explain.profit("income", current.trailingNetIncome), weight: 0.7, missingScore: MISSING_SIGNAL_SCORE },
     {
-      score: profile.isFinancial ? undefined : signedProfitSignal(current.trailingFcf),
+      ...explain.profit("fcf", current.trailingFcf),
       weight: profile.isFinancial ? 0 : 0.85,
       critical: !profile.isFinancial,
     },
@@ -714,6 +723,7 @@ function buildValuationIndicator(
     score,
     weight: profile.weights.valuation,
     confidence: percentScore(signals.confidence),
+    signals: signals.signals,
     evidence: compactEvidence([
       ["P/E", formatMultiple(current.trailingPE, language)],
       ["P/E SPY", formatMultiple(current.marketPE, language)],
@@ -746,26 +756,27 @@ function buildGrowthIndicator(
   language: Language,
 ): IndicatorResult {
   const copy = analysisCopy[language].indicators.growth;
+  const explain = explainSignals(language);
   const signals = scoreSignals([
-    { score: premiumSignal(current.revenueGrowth, peers.revenueGrowth), weight: 0.9 },
-    { score: premiumSignal(current.earningsGrowth, peers.earningsGrowth), weight: 0.75 },
-    { score: premiumSignal(growth.forwardRevenueGrowth, peers.revenueGrowth), weight: 0.55 },
+    { ...explain.premium("revenuePeers", current.revenueGrowth, peers.revenueGrowth), weight: 0.9 },
+    { ...explain.premium("earningsPeers", current.earningsGrowth, peers.earningsGrowth), weight: 0.75 },
+    { ...explain.premium("forwardPeers", growth.forwardRevenueGrowth, peers.revenueGrowth), weight: 0.55 },
     {
-      score: thresholdSignal(growth.revenueCagr3y, profile.growth.revenueWatch, profile.growth.revenueGood),
+      ...explain.threshold("revenueCagr", growth.revenueCagr3y, profile.growth.revenueWatch, profile.growth.revenueGood),
       weight: 1.15,
       critical: true,
     },
     {
-      score: thresholdSignal(growth.netIncomeCagr3y, profile.growth.earningsWatch, profile.growth.earningsGood),
+      ...explain.threshold("incomeCagr", growth.netIncomeCagr3y, profile.growth.earningsWatch, profile.growth.earningsGood),
       weight: 0.8,
     },
     {
-      score: thresholdSignal(growth.fcfCagr3y, profile.growth.fcfWatch, profile.growth.fcfGood),
+      ...explain.threshold("fcfCagr", growth.fcfCagr3y, profile.growth.fcfWatch, profile.growth.fcfGood),
       weight: profile.isFinancial ? 0.25 : 1,
       critical: !profile.isFinancial,
     },
-    { score: thresholdSignal(growth.forwardRevenueGrowth, profile.growth.revenueWatch, profile.growth.revenueGood), weight: 0.55 },
-    { score: thresholdSignal(growth.forwardEarningsGrowth, profile.growth.earningsWatch, profile.growth.earningsGood), weight: 0.6 },
+    { ...explain.threshold("forwardRevenue", growth.forwardRevenueGrowth, profile.growth.revenueWatch, profile.growth.revenueGood), weight: 0.55 },
+    { ...explain.threshold("forwardEarnings", growth.forwardEarningsGrowth, profile.growth.earningsWatch, profile.growth.earningsGood), weight: 0.6 },
   ]);
   const score = signals.score;
   const tone = toneFromScore(score, signals.confidence);
@@ -779,6 +790,7 @@ function buildGrowthIndicator(
     score,
     weight: profile.weights.growth,
     confidence: percentScore(signals.confidence),
+    signals: signals.signals,
     evidence: compactEvidence([
       [copy.evidence.revenueYoy, formatPercent(current.revenueGrowth, language)],
       [copy.evidence.revenuePeers, formatPercent(peers.revenueGrowth, language)],
@@ -820,35 +832,34 @@ function buildMarginsIndicator(
   const fcfWeight = profile.isFinancial ? 0.2 : 0.85;
   const roicWeight = profile.isFinancial ? 0 : 0.65;
   const leverageWeight = profile.isFinancial ? 0.15 : 0.55;
+  const explain = explainSignals(language);
   const signals = scoreSignals([
-    { score: thresholdSignal(trend.grossDelta, -0.01, 0.02), weight: grossWeight * 0.45 },
-    { score: thresholdSignal(trend.operatingDelta, -0.01, 0.02), weight: operatingWeight * 0.55 },
-    { score: thresholdSignal(trend.netDelta, -0.01, 0.02), weight: 0.55 },
-    { score: thresholdSignal(current.grossMargin, profile.margins.grossWatch, profile.margins.grossGood), weight: grossWeight },
+    { ...explain.threshold("grossDelta", trend.grossDelta, -0.01, 0.02, true), weight: grossWeight * 0.45 },
+    { ...explain.threshold("operatingDelta", trend.operatingDelta, -0.01, 0.02, true), weight: operatingWeight * 0.55 },
+    { ...explain.threshold("netDelta", trend.netDelta, -0.01, 0.02, true), weight: 0.55 },
+    { ...explain.threshold("grossMargin", current.grossMargin, profile.margins.grossWatch, profile.margins.grossGood), weight: grossWeight },
     {
-      score: thresholdSignal(current.operatingMargin, profile.margins.operatingWatch, profile.margins.operatingGood),
+      ...explain.threshold("operatingMargin", current.operatingMargin, profile.margins.operatingWatch, profile.margins.operatingGood),
       weight: operatingWeight,
     },
-    { score: thresholdSignal(current.profitMargin, profile.margins.profitWatch, profile.margins.profitGood), weight: 1, critical: true },
-    { score: thresholdSignal(current.fcfMargin, profile.margins.fcfWatch, profile.margins.fcfGood), weight: fcfWeight },
-    { score: premiumSignal(current.profitMargin, peers.profitMargin), weight: 0.7 },
-    { score: premiumSignal(current.returnOnEquity, peers.returnOnEquity), weight: 0.45 },
-    { score: thresholdSignal(current.returnOnEquity, profile.margins.roeWatch, profile.margins.roeGood), weight: 0.75 },
+    { ...explain.threshold("profitMargin", current.profitMargin, profile.margins.profitWatch, profile.margins.profitGood), weight: 1, critical: true },
+    { ...explain.threshold("fcfMargin", current.fcfMargin, profile.margins.fcfWatch, profile.margins.fcfGood), weight: fcfWeight },
+    { ...explain.premium("marginPeers", current.profitMargin, peers.profitMargin), weight: 0.7 },
+    { ...explain.premium("roePeers", current.returnOnEquity, peers.returnOnEquity), weight: 0.45 },
+    { ...explain.threshold("roe", current.returnOnEquity, profile.margins.roeWatch, profile.margins.roeGood), weight: 0.75 },
     {
-      score: thresholdSignal(current.returnOnInvestedCapital, profile.margins.roicWatch, profile.margins.roicGood),
+      ...explain.threshold("roic", current.returnOnInvestedCapital, profile.margins.roicWatch, profile.margins.roicGood),
       weight: roicWeight,
     },
     {
-      score: lowerIsBetterSignal(current.debtToEquity, profile.leverage.debtToEquityGood, profile.leverage.debtToEquityWatch),
+      ...explain.lower("debt", current.debtToEquity, profile.leverage.debtToEquityGood, profile.leverage.debtToEquityWatch),
       weight: leverageWeight,
     },
     {
-      score: lowerIsBetterSignal(current.netDebtToFcf, profile.leverage.netDebtToFcfGood, profile.leverage.netDebtToFcfWatch, {
-        negativeIsGood: true,
-      }),
+      ...explain.lower("netDebt", current.netDebtToFcf, profile.leverage.netDebtToFcfGood, profile.leverage.netDebtToFcfWatch, false, true),
       weight: profile.isFinancial ? 0 : 0.5,
     },
-    { score: thresholdSignal(current.revenueGrowth ?? growth.revenueCagr3y, 0, profile.growth.revenueWatch), weight: 0.35 },
+    { ...explain.threshold("revenueFloor", current.revenueGrowth ?? growth.revenueCagr3y, 0, profile.growth.revenueWatch), weight: 0.35 },
   ]);
   const score = signals.score;
   const tone = toneFromScore(score, signals.confidence);
@@ -862,6 +873,7 @@ function buildMarginsIndicator(
     score,
     weight: profile.weights.margins,
     confidence: percentScore(signals.confidence),
+    signals: signals.signals,
     evidence: compactEvidence([
       [copy.evidence.grossMargin, formatPercent(current.grossMargin, language)],
       [copy.evidence.grossChange3y, formatPp(trend.grossDelta, language)],
@@ -908,13 +920,14 @@ function buildPegIndicator(
   const adjustedPeg = basePeg && adjustment ? basePeg * adjustment : basePeg;
 
   const fcfWeight = profile.isFinancial ? 0.2 : 0.85;
+  const explain = explainSignals(language);
   const signals = scoreSignals([
-    { score: pegSignal(adjustedPeg), weight: 1.15, critical: true },
-    { score: growthForPegSignal(growthForPeg), weight: 0.65, critical: true },
-    { score: lowerIsBetterSignal(sbcToRevenue, 0.03, 0.1), weight: 0.75 },
-    { score: lowerIsBetterSignal(sbcToFcf, 0.08, 0.25), weight: fcfWeight },
-    { score: signedProfitSignal(current.trailingFcf), weight: fcfWeight, critical: !profile.isFinancial },
-    { score: signedProfitSignal(adjustedFcf), weight: fcfWeight, critical: !profile.isFinancial },
+    { ...explain.peg("peg", adjustedPeg, Boolean(basePeg && adjustment)), weight: 1.15, critical: true },
+    { ...explain.pegGrowth("pegGrowth", growthForPeg), weight: 0.65, critical: true },
+    { ...explain.lower("sbcRevenue", sbcToRevenue, 0.03, 0.1, true), weight: 0.75 },
+    { ...explain.lower("sbcFcf", sbcToFcf, 0.08, 0.25, true), weight: fcfWeight },
+    { ...explain.profit("fcf", current.trailingFcf), weight: fcfWeight, critical: !profile.isFinancial },
+    { ...explain.profit("adjustedFcf", adjustedFcf), weight: fcfWeight, critical: !profile.isFinancial },
   ]);
   const score = signals.score;
   const tone = toneFromScore(score, signals.confidence);
@@ -928,6 +941,7 @@ function buildPegIndicator(
     score,
     weight: profile.weights.peg,
     confidence: percentScore(signals.confidence),
+    signals: signals.signals,
     evidence: compactEvidence([
       [copy.evidence.pegYahoo, formatMultiple(basePeg, language)],
       [copy.evidence.pegWithSbc, formatMultiple(adjustedPeg, language)],
@@ -1226,11 +1240,63 @@ function scoringProfileFor(sector?: string, industry?: string): ScoringProfile {
   return base;
 }
 
+/** Describe the exact inputs at the same call site that computes their score. */
+function explainSignals(language: Language) {
+  type Label = keyof typeof signalLabels.uk;
+  const local = (uk: string, en: string) => language === "uk" ? uk : en;
+  const percent = (value?: number) => formatPercent(value, language);
+  const multiple = (value?: number) => formatMultipleAllowingZero(value, language);
+  const describe = (key: Label, value: string, rule: string, score: number | undefined) => ({
+    label: signalLabels[language][key], value, rule, score,
+  });
+
+  return {
+    pace: (key: Label, value?: number) => describe(key, percent(value), local(
+      `Вище — краще. Орієнтир подвоєння: ${percent(DOUBLE_CAGR)} на рік → 86/100; від ${percent(DOUBLE_CAGR * 1.25)} → 100/100. Від’ємне зростання → 8/100.`,
+      `Higher is better. Doubling benchmark: ${percent(DOUBLE_CAGR)} a year → 86/100; at least ${percent(DOUBLE_CAGR * 1.25)} → 100/100. Negative growth → 8/100.`,
+    ), growthPaceSignal(value, DOUBLE_CAGR)),
+    discount: (key: Label, value?: number, benchmark?: number) => describe(key, multiple(value), local(
+      `База порівняння: ${multiple(benchmark)}. Нижчий додатний мультиплікатор — краще. Знижка від 25% → 100/100; премія понад 30% → 10/100.`,
+      `Benchmark: ${multiple(benchmark)}. A lower positive multiple is better. A discount of at least 25% → 100/100; a premium over 30% → 10/100.`,
+    ), valuationDiscountSignal(value, benchmark)),
+    premium: (key: Label, value?: number, benchmark?: number) => describe(key, percent(value), local(
+      `Медіана конкурентів: ${percent(benchmark)}. Різниця від +10 п.п. → 100; від +3 → 78; від −2 → 56; від −8 → 36; нижче → 14.`,
+      `Peer median: ${percent(benchmark)}. A gap of at least +10 pp → 100; +3 → 78; −2 → 56; −8 → 36; below that → 14.`,
+    ), premiumSignal(value, benchmark)),
+    threshold: (key: Label, value: number | undefined, watch: number, good: number, delta = false) => {
+      const format = delta ? (v?: number) => formatPp(v, language) : percent;
+      return describe(key, format(value), local(
+        `Вище — краще. Від ${format(good)} → 100/100; від ${format(watch)} до ${format(good)} → 62–88; нижче → 34 або 12 залежно від відхилення.`,
+        `Higher is better. At least ${format(good)} → 100/100; from ${format(watch)} to ${format(good)} → 62–88; below that → 34 or 12 depending on the gap.`,
+      ), thresholdSignal(value, watch, good));
+    },
+    lower: (key: Label, value: number | undefined, good: number, watch: number, asPercent = false, negativeIsGood = false) => {
+      const format = asPercent ? percent : multiple;
+      return describe(key, format(value), local(
+        `Менше — краще. Від 0 до ${format(good)} → 100/100; до ${format(watch)} → 62–88; вище → 34 або 12. Від’ємне значення → ${negativeIsGood ? 100 : 18}/100.`,
+        `Lower is better. From 0 to ${format(good)} → 100/100; up to ${format(watch)} → 62–88; above that → 34 or 12. Negative values → ${negativeIsGood ? 100 : 18}/100.`,
+      ), lowerIsBetterSignal(value, good, watch, { negativeIsGood }));
+    },
+    profit: (key: Label, value?: number) => describe(key, formatCompact(value, language) ?? analysisCopy[language].notAvailable, local(
+      "Додатне значення → 72/100; нуль → 24/100; від’ємне → 8/100. Тут оцінюється наявність прибутку або грошового потоку, а не його розмір.",
+      "Positive → 72/100; zero → 24/100; negative → 8/100. This input evaluates whether profit or cash flow is positive, not its size.",
+    ), signedProfitSignal(value)),
+    peg: (key: Label, value: number | undefined, adjusted: boolean) => describe(key, multiple(value), local(
+      `Нижчий додатний PEG — краще: <1 → 100; <1,4 → 70; <2 → 42; ≥2 → 14. ${adjusted ? "Поправка: базовий PEG × FCF / (FCF − SBC)." : "Поправку на SBC не застосовано: використано базовий PEG."}`,
+      `A lower positive PEG is better: <1 → 100; <1.4 → 70; <2 → 42; ≥2 → 14. ${adjusted ? "Adjustment: base PEG × FCF / (FCF − SBC)." : "The SBC adjustment was not applied: base PEG is used."}`,
+    ), pegSignal(value)),
+    pegGrowth: (key: Label, value?: number) => describe(key, percent(value), local(
+      `Від ${percent(DOUBLE_CAGR)} → 86/100; від 8% → 62; додатне нижче 8% → 34; нуль або від’ємне → 8.`,
+      `At least ${percent(DOUBLE_CAGR)} → 86/100; at least 8% → 62; positive but below 8% → 34; zero or negative → 8.`,
+    ), growthForPegSignal(value)),
+  };
+}
+
 function scoreSignals(signals: ScoreSignal[]): ScoreBreakdown {
   const usable = signals.filter((signal) => (signal.weight ?? DEFAULT_SIGNAL_WEIGHT) > 0);
   const totalWeight = usable.reduce((sum, signal) => sum + (signal.weight ?? DEFAULT_SIGNAL_WEIGHT), 0);
   if (!totalWeight) {
-    return { score: 0, confidence: 0, observedWeight: 0, totalWeight: 0 };
+    return { score: 0, confidence: 0, observedWeight: 0, totalWeight: 0, signals: [] };
   }
 
   let observedWeight = 0;
@@ -1250,6 +1316,17 @@ function scoreSignals(signals: ScoreSignal[]): ScoreBreakdown {
     confidence: clamp(observedWeight / totalWeight, 0, 1),
     observedWeight,
     totalWeight,
+    signals: usable.map((signal) => ({
+      label: signal.label,
+      value: signal.value,
+      rule: signal.rule,
+      score: isFiniteNumber(signal.score)
+        ? clamp(signal.score, 0, 100)
+        : signal.missingScore ?? (signal.critical ? MISSING_CRITICAL_SCORE : MISSING_SIGNAL_SCORE),
+      weight: (signal.weight ?? DEFAULT_SIGNAL_WEIGHT) / totalWeight,
+      observed: isFiniteNumber(signal.score),
+      critical: Boolean(signal.critical),
+    })),
   };
 }
 
@@ -1322,6 +1399,11 @@ function buildScoreSummary({
     confidence: percentScore(confidence ?? 0),
     riskPenalty,
     riskFlags: risk.flags,
+    riskBreakdown: {
+      items: risk.items,
+      explicitPenalty: risk.penalty,
+      confidencePenalty,
+    } satisfies RiskBreakdown,
     scoringProfile: profile.label[language],
   };
 }
@@ -1360,6 +1442,7 @@ function buildRiskAssessment({
   language: Language;
 }) {
   const flags: string[] = [];
+  const items: RiskBreakdown["items"] = [];
   let penalty = 0;
   const copy = riskCopy(language);
 
@@ -1367,6 +1450,7 @@ function buildRiskAssessment({
     if (!condition) return;
     penalty += value;
     flags.push(flag);
+    items.push({ label: flag, points: value });
   };
 
   addRisk(confidence < 0.55, 4, copy.lowConfidence);
@@ -1385,54 +1469,54 @@ function buildRiskAssessment({
   addRisk(
     !profile.isFinancial && isFiniteNumber(current.debtToEquity) && current.debtToEquity > profile.leverage.debtToEquityWatch,
     6,
-    copy.highLeverage,
+    `${copy.highLeverage}: ${formatMultipleAllowingZero(current.debtToEquity, language)} > ${formatMultipleAllowingZero(profile.leverage.debtToEquityWatch, language)}`,
   );
   addRisk(
     !profile.isFinancial && isFiniteNumber(current.netDebtToFcf) && current.netDebtToFcf > profile.leverage.netDebtToFcfWatch,
     5,
-    copy.highNetDebt,
+    `${copy.highNetDebt}: ${formatMultipleAllowingZero(current.netDebtToFcf, language)} > ${formatMultipleAllowingZero(profile.leverage.netDebtToFcfWatch, language)}`,
   );
 
-  return { penalty: clamp(penalty, 0, 26), flags: Array.from(new Set(flags)).slice(0, 8) };
+  return { penalty: clamp(penalty, 0, 26), flags: Array.from(new Set(flags)), items };
 }
 
 function riskCopy(language: Language) {
   if (language === "en") {
     return {
-      lowConfidence: "low data confidence",
+      lowConfidence: "data coverage below 55%",
       recommendedPeers: "ACTUAL_PEERS group missing; using Yahoo fallback",
       noPeers: "no peer comparison",
-      shortHistory: "short financial history",
+      shortHistory: "fewer than 3 annual financial statements",
       missingCashFlow: "cash flow/SBC data missing",
       missingTtm: "TTM financials missing",
-      noHistory: "no historical valuation",
-      negativeEarnings: "negative earnings",
-      negativeFcf: "negative FCF",
+      noHistory: "fewer than 2 historical valuation observations",
+      negativeEarnings: "zero or negative net income",
+      negativeFcf: "zero or negative FCF",
       negativeAdjustedFcf: "FCF after SBC is not positive",
-      highSbc: "high SBC dilution pressure",
-      elevatedSbc: "elevated SBC",
-      negativeEquity: "negative equity",
+      highSbc: "SBC exceeds 10% of revenue",
+      elevatedSbc: "SBC exceeds 5% of revenue (up to 10%)",
+      negativeEquity: "zero or negative equity",
       highLeverage: "high debt/equity",
       highNetDebt: "high net debt/FCF",
     };
   }
 
   return {
-    lowConfidence: "низька довіра до даних",
+    lowConfidence: "повнота даних нижча за 55%",
     recommendedPeers: "ACTUAL_PEERS peer-група відсутня; використовується Yahoo fallback",
     noPeers: "немає peer-порівняння",
-    shortHistory: "коротка історія фінзвітності",
+    shortHistory: "менше 3 річних фінансових звітів",
     missingCashFlow: "бракує cash flow/SBC",
     missingTtm: "бракує TTM-фінансів",
-    noHistory: "немає історичного valuation",
-    negativeEarnings: "від'ємний прибуток",
-    negativeFcf: "від'ємний FCF",
+    noHistory: "менше 2 історичних оцінок мультиплікаторів",
+    negativeEarnings: "нульовий або від’ємний чистий прибуток",
+    negativeFcf: "нульовий або від’ємний FCF",
     negativeAdjustedFcf: "FCF після SBC не додатний",
-    highSbc: "високий тиск SBC",
-    elevatedSbc: "підвищений SBC",
-    negativeEquity: "від'ємний equity",
-    highLeverage: "високий debt/equity",
-    highNetDebt: "високий net debt/FCF",
+    highSbc: "винагорода акціями (SBC) перевищує 10% виручки",
+    elevatedSbc: "винагорода акціями (SBC) перевищує 5% виручки (до 10%)",
+    negativeEquity: "нульовий або від’ємний власний капітал",
+    highLeverage: "високий борг / власний капітал",
+    highNetDebt: "високий чистий борг / FCF",
   };
 }
 

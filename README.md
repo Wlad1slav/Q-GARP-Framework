@@ -17,6 +17,9 @@ helper, not investment advice.
 - Ticker analysis with a 0-100 quality/growth/valuation score.
 - Five checklist areas: 5-year doubling pace, valuation, growth versus peers,
   margin quality, and PEG with SBC.
+- Interactive score explanation with weighted contribution bars, the gap to each
+  component's maximum, input values and scoring thresholds, and a weak/missing
+  input filter. Risk deductions, caps, and data coverage are shown separately.
 - S&P 500 top page at `/sp500-top`, with live batch scanning and leaderboards
   for each of the five indicators.
 - Portfolio poster generator at `/portfolio-visual` with Yahoo Portfolio,
